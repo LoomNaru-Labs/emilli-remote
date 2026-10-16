@@ -459,6 +459,7 @@ jobs:
         run: |
           set -euo pipefail
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "$KEY_PATH"' EXIT
           printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
           AUTH=(-allowProvisioningUpdates
                 -authenticationKeyPath "$KEY_PATH"
@@ -466,11 +467,20 @@ jobs:
                 -authenticationKeyIssuerID "$APPLE_API_ISSUER_ID")
           # Each TestFlight upload needs a new build number.
           BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
+          ARCHIVE="$RUNNER_TEMP/Runner.xcarchive"
+          # The archive is built unsigned. An automatically signed archive is signed for
+          # development, which needs a development profile, and Apple makes those only
+          # for teams with a registered device; ours has none. The export below signs
+          # the app for App Store distribution instead, which needs no device.
           xcodebuild archive \
             -workspace flutter/ios/Runner.xcworkspace -scheme Runner -configuration Release \
-            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
-            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
-            FLUTTER_BUILD_NUMBER="$BUILD_NUMBER" "${AUTH[@]}"
+            -destination 'generic/platform=iOS' -archivePath "$ARCHIVE" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            FLUTTER_BUILD_NUMBER="$BUILD_NUMBER"
+          APP="$ARCHIVE/Products/Applications/Runner.app"
+          plutil -p "$APP/Info.plist" | grep -E '"CF(BundleIdentifier|BundleShortVersionString|BundleVersion)"'
+          test "$(plutil -extract CFBundleVersion raw "$APP/Info.plist")" = "$BUILD_NUMBER"
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -481,11 +491,20 @@ jobs:
             <key>teamID</key><string>${APPLE_TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
             <key>uploadSymbols</key><false/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
           </dict>
           </plist>
           EOF
-          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+          if ! xcodebuild -exportArchive -archivePath "$ARCHIVE" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-            -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
-          rm -f "$KEY_PATH"
+            -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"; then
+            # Xcode's distribution log says which signing or upload step failed. Only its
+            # error lines are printed, and never a line that could carry a token.
+            find "${TMPDIR:-/tmp}" -name 'IDEDistribution.standard.log' 2>/dev/null | while read -r log; do
+              echo "== $log"
+              grep -i -E 'error|fail|denied|missing|invalid|not allowed|no account|no profile|no signing' "$log" \
+                | grep -v -i -E 'bearer|authorization|eyJ' | tail -n 80 || true
+            done
+            exit 1
+          fi
           echo "Uploaded build $BUILD_NUMBER of version $VERSION to App Store Connect."
