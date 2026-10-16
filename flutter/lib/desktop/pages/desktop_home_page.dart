@@ -433,10 +433,10 @@ class _DesktopHomePageState extends State<DesktopHomePage>
         bind.mainUriPrefixSync().contains('rustdesk')) {
       final isToUpdate = (isWindows || isMacOS) && bind.mainIsInstalled();
       String btnText = isToUpdate ? 'Update' : 'Download';
-      // Emilli: "Update" and "Download" both open our download page; the app never downloads
-      // or installs official RustDesk.
-      GestureTapCallback onPressed = () async {
-        await launchUrl(Uri.parse(kEmilliDownloadPage));
+      // Emilli: "Update" and "Download" only say that the administrator sends new versions;
+      // the app never downloads or installs anything and opens no download page.
+      GestureTapCallback onPressed = () {
+        showToast(translate('emilli-update-tip'));
       };
       return buildInstallCard(
           "Status",

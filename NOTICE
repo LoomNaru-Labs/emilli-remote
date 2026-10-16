@@ -47,11 +47,11 @@ unchanged by these, apart from shared text in item 11):
     ("allow-auto-update") is always off, and the app has no address to
     ask RustDesk's servers for a new version.
 11. flutter/lib (consts.dart, desktop_home_page.dart,
-    desktop_setting_page.dart, mobile connection_page.dart): update and
-    download actions open the Emilli Remote download page
-    (https://rd.emillis.net/tk4zcwgwfnpgi31hoe0xb4d5/) instead of
-    downloading official RustDesk; About has an "Update" link to that
-    page, and its "Website" link goes to this repository.
+    desktop_setting_page.dart, mobile connection_page.dart) and src/lang
+    (en.rs, ko.rs): update and download actions open no page and download
+    nothing; they show "Your administrator sends new versions." About
+    shows that line instead of an update link, and its "Website" link goes
+    to this repository.
 12. build-apple.yml: the Mac build fails if RustDesk's public server, its
     version check, its download page or its GitHub releases are built in.
 
