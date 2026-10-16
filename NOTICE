@@ -1,0 +1,35 @@
+Emilli Remote
+=============
+
+This repository is a modified version of RustDesk, the open source remote
+desktop software by Purslane Tech Pte. Ltd. and the RustDesk contributors
+(https://github.com/rustdesk/rustdesk). RustDesk is licensed under the GNU
+Affero General Public License, version 3 (AGPL-3.0); see the file LICENCE.
+This modified version is distributed under the same licence, without any
+warranty.
+
+Base: RustDesk tag 1.5.0, commit fada664df7a294d1d1a9ca3e7cd3637069122f17,
+with libs/hbb_common at commit 229b904508364c8997aad0fb5af57effac859f60
+(https://github.com/rustdesk/hbb_common) included as plain files.
+
+Modified by LoomNaru Labs Inc, starting 2026-10-16. The changes, each in its
+own commit after the import commit:
+
+1. libs/hbb_common/src/config.rs: the built-in ID server is rd.emillis.net
+   instead of rs-ny.rustdesk.com, and the built-in server public key is the
+   public key of rd.emillis.net instead of RustDesk's.
+2. src/common.rs: when no account (API) server is saved, the app uses
+   https://rd.emillis.net instead of https://admin.rustdesk.com.
+3. flutter/macos and flutter/ios: bundle identifier
+   com.loomnarulabs.emilliremote and display name "Emilli Remote".
+4. .github/workflows: upstream's workflows are removed; build-apple.yml
+   builds the Mac and iPhone apps with the same steps and versions as
+   upstream's macOS and iOS jobs.
+5. NOTICE, .github/README.md and docs/APPLE_SIGNING_NEXT.md are new.
+
+Everything else is unchanged upstream code. The complete history of the
+changes is the git history of this repository.
+
+"RustDesk" is the name of the upstream project. This build is not made,
+endorsed or supported by the RustDesk developers. For the official RustDesk
+apps, use https://rustdesk.com or https://github.com/rustdesk/rustdesk.
