@@ -11,6 +11,12 @@ name: Build Apple apps
 
 on:
   workflow_dispatch:
+    inputs:
+      apps:
+        description: "Apps to build"
+        type: choice
+        options: [both, mac, iphone]
+        default: both
   push:
     branches: [main]
     # Text-only changes do not need a new build.
@@ -22,8 +28,10 @@ on:
 permissions:
   contents: read
 
+# A run for one app does not cancel a run for the other, so an iPhone run can start
+# while a Mac run still waits for Apple's notary service.
 concurrency:
-  group: build-apple-${{ github.ref }}
+  group: build-apple-${{ github.ref }}-${{ inputs.apps || 'both' }}
   cancel-in-progress: true
 
 env:
@@ -114,6 +122,7 @@ jobs:
   macos:
     name: Mac app (Apple Silicon)
     needs: bridge
+    if: inputs.apps != 'iphone'
     runs-on: macos-14
     env:
       # "true" only when every secret the Mac signing steps need exists.
@@ -328,6 +337,7 @@ jobs:
   ios:
     name: iPhone app
     needs: bridge
+    if: inputs.apps != 'mac'
     runs-on: macos-latest
     env:
       # "true" only when every secret the iPhone signing step needs exists.
