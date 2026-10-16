@@ -481,6 +481,14 @@ jobs:
           APP="$ARCHIVE/Products/Applications/Runner.app"
           plutil -p "$APP/Info.plist" | grep -E '"CF(BundleIdentifier|BundleShortVersionString|BundleVersion)"'
           test "$(plutil -extract CFBundleVersion raw "$APP/Info.plist")" = "$BUILD_NUMBER"
+          # Upstream's Info.plist carries ITSAppUsesNonExemptEncryption = NO, which would
+          # answer Apple's export compliance question for every upload. That answer is the
+          # owner's to give in App Store Connect, so the uploaded build leaves the key out.
+          /usr/libexec/PlistBuddy -c "Delete :ITSAppUsesNonExemptEncryption" "$APP/Info.plist"
+          if plutil -extract ITSAppUsesNonExemptEncryption raw "$APP/Info.plist" >/dev/null 2>&1; then
+            echo "ITSAppUsesNonExemptEncryption is still in the archived Info.plist" >&2
+            exit 1
+          fi
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
