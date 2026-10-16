@@ -27,6 +27,34 @@ own commit after the import commit:
    upstream's macOS and iOS jobs.
 5. NOTICE, .github/README.md and docs/APPLE_SIGNING_NEXT.md are new.
 
+Changed on 2026-10-16 for the Mac app, so that it installs next to an
+official RustDesk and can never turn into one (the iPhone app is
+unchanged by these, apart from shared text in item 11):
+
+6. src/platform/privileges_scripts (install.scpt, update.scpt,
+   uninstall.scpt, daemon.plist): every path is quoted, so an app name
+   with a space works.
+7. libs/hbb_common/src/config.rs, flutter/macos/Runner/Configs/
+   AppInfo.xcconfig, build.py, build-apple.yml: on macOS the app name is
+   "Emilli Remote" and the bundle is "Emilli Remote.app", with its own
+   settings folder, logs, IPC sockets and launchd jobs.
+8. libs/hbb_common/src/config.rs: on macOS a new device ID is the number
+   desktop RustDesk derives from the network card plus 0x20000000, so it
+   never equals the ID of an official RustDesk on the same Mac.
+9. libs/hbb_common/src/config.rs: on macOS direct IP access
+   ("direct-server") is always off and cannot be turned on.
+10. libs/hbb_common/src/config.rs and lib.rs: on macOS auto update
+    ("allow-auto-update") is always off, and the app has no address to
+    ask RustDesk's servers for a new version.
+11. flutter/lib (consts.dart, desktop_home_page.dart,
+    desktop_setting_page.dart, mobile connection_page.dart): update and
+    download actions open the Emilli Remote download page
+    (https://rd.emillis.net/tk4zcwgwfnpgi31hoe0xb4d5/) instead of
+    downloading official RustDesk; About has an "Update" link to that
+    page, and its "Website" link goes to this repository.
+12. build-apple.yml: the Mac build fails if RustDesk's public server, its
+    version check, its download page or its GitHub releases are built in.
+
 Everything else is unchanged upstream code. The complete history of the
 changes is the git history of this repository.
 
