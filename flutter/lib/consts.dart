@@ -723,3 +723,5 @@ const kCheckSoftwareUpdateFinish = 'check_software_update_finish';
 // Emilli: where people get this app and its updates. Every update or download action opens it,
 // so nothing points at official RustDesk downloads.
 const String kEmilliDownloadPage = 'https://rd.emillis.net/tk4zcwgwfnpgi31hoe0xb4d5/';
+// Emilli: the public source of this build (AGPL-3.0).
+const String kEmilliSourceRepo = 'https://github.com/LoomNaru-Labs/emilli-remote';

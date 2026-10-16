@@ -2560,9 +2560,10 @@ class _AboutState extends State<_About> {
                     translate('Privacy Statement'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
+              // Emilli: our project page and source; RustDesk's copyright and licence stay below.
               InkWell(
                   onTap: () {
-                    launchUrlString('https://rustdesk.com');
+                    launchUrlString(kEmilliSourceRepo);
                   },
                   child: Text(
                     translate('Website'),
