@@ -97,6 +97,9 @@ fn emilli_locked_settings() -> HashMap<String, String> {
         // No direct IP access, so every connection goes through our server's access check
         // (the Android build forces the same).
         settings.insert(keys::OPTION_DIRECT_SERVER.to_owned(), "N".to_owned());
+        // No auto update ("allow-auto-update", keys::OPTION_ALLOW_AUTO_UPDATE in libs/base): the
+        // root service's updater can never install official RustDesk.
+        settings.insert("allow-auto-update".to_owned(), "N".to_owned());
     }
     settings
 }
