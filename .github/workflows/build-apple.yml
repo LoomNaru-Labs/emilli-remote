@@ -294,11 +294,25 @@ jobs:
             "$DMG" "$APP_PATH"
           codesign --force --timestamp --sign "$MAC_SIGN_IDENTITY" "$DMG"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          trap 'rm -f "$KEY_PATH"' EXIT
           printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
-          xcrun notarytool submit "$DMG" --key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
-          rm -f "$KEY_PATH"
+          NOTARY=(--key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID")
+          # Keep going when Apple rejects the dmg, so that its reasons are printed below.
+          xcrun notarytool submit "$DMG" "${NOTARY[@]}" --wait --output-format json > "$RUNNER_TEMP/notary.json" || true
+          cat "$RUNNER_TEMP/notary.json"; echo
+          SUBMISSION_ID="$(plutil -extract id raw -o - "$RUNNER_TEMP/notary.json")"
+          STATUS="$(plutil -extract status raw -o - "$RUNNER_TEMP/notary.json")"
+          # Apple's log lists every file it checked and any problem it found.
+          xcrun notarytool log "$SUBMISSION_ID" "${NOTARY[@]}"
+          test "$STATUS" = "Accepted"
           xcrun stapler staple "$DMG"
+          echo "Checks: signature, Gatekeeper and the stapled notarisation ticket"
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          codesign -dvv "$APP_PATH" 2>&1 | grep -E '^(Identifier|Authority|TeamIdentifier|Timestamp|Runtime Version)'
+          codesign --verify --strict --verbose=2 "$DMG"
+          spctl --assess --type execute --verbose "$APP_PATH"
           spctl --assess --type open --context context:primary-signature --verbose "$DMG"
+          xcrun stapler validate "$DMG"
           shasum -a 256 "$DMG"
 
       - name: "[signing] Upload the signed dmg"
