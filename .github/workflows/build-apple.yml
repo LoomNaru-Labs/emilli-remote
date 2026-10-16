@@ -1,0 +1,467 @@
+# Builds Emilli Remote (RustDesk configured for rd.emillis.net) for Mac and iPhone
+# on GitHub-hosted macOS runners.
+#
+# The steps, tool versions and pinned actions are copied from upstream RustDesk 1.5.0:
+# .github/workflows/bridge.yml and the jobs build-for-macOS (aarch64) and
+# build-rustdesk-ios in .github/workflows/flutter-build.yml (see the first commit).
+#
+# Today both apps come out unsigned. The signing steps below are switched off
+# until the Apple secrets exist; see docs/APPLE_SIGNING_NEXT.md.
+name: Build Apple apps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    # Text-only changes do not need a new build.
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+      - "NOTICE"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apple-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION: "1.5.0"
+  RUST_VERSION: "1.75"
+  MAC_RUST_VERSION: "1.81"
+  FLUTTER_VERSION: "3.24.5"
+  BRIDGE_FLUTTER_VERSION: "3.22.3"
+  CARGO_EXPAND_VERSION: "1.0.95"
+  FLUTTER_RUST_BRIDGE_VERSION: "1.80.1"
+  VCPKG_COMMIT_ID: "9e593bb18ea69cc5095e012465dcd675a822ed0d"
+  VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
+  RETENTION_DAYS: 30
+
+jobs:
+  bridge:
+    name: Generate the Flutter-Rust bridge
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install prerequisites
+        run: |
+          sudo apt-get install ca-certificates -y
+          sudo apt-get update -y
+          sudo apt-get install -y \
+            clang \
+            cmake \
+            curl \
+            gcc \
+            git \
+            g++ \
+            libclang-dev \
+            libgtk-3-dev \
+            llvm-dev \
+            nasm \
+            ninja-build \
+            pkg-config \
+            wget
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: x86_64-unknown-linux-gnu
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: bridge-ubuntu-22.04
+
+      - name: Install flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.BRIDGE_FLUTTER_VERSION }}
+          cache: true
+
+      - name: Install flutter rust bridge deps
+        shell: bash
+        run: |
+          cargo install cargo-expand --version ${{ env.CARGO_EXPAND_VERSION }} --locked
+          cargo install flutter_rust_bridge_codegen --version ${{ env.FLUTTER_RUST_BRIDGE_VERSION }} --features "uuid" --locked
+          # As upstream: Flutter 3.22.3 cannot resolve extended_text 14, so the bridge step uses 13.
+          sed -i -e 's/extended_text: 14.0.0/extended_text: 13.0.0/g' flutter/pubspec.yaml
+          pushd flutter && flutter pub get && popd
+
+      - name: Run flutter rust bridge
+        run: |
+          ~/.cargo/bin/flutter_rust_bridge_codegen --rust-input ./src/flutter_ffi.rs --dart-output ./flutter/lib/generated_bridge.dart --c-output ./flutter/macos/Runner/bridge_generated.h
+          cp ./flutter/macos/Runner/bridge_generated.h ./flutter/ios/Runner/bridge_generated.h
+
+      - name: Upload bridge files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: bridge-artifact
+          retention-days: 1
+          if-no-files-found: error
+          path: |
+            ./src/bridge_generated.rs
+            ./src/bridge_generated.io.rs
+            ./flutter/lib/generated_bridge.dart
+            ./flutter/lib/generated_bridge.freezed.dart
+            ./flutter/macos/Runner/bridge_generated.h
+            ./flutter/ios/Runner/bridge_generated.h
+
+  macos:
+    name: Mac app (Apple Silicon)
+    needs: bridge
+    runs-on: macos-14
+    env:
+      # "true" only when every secret the Mac signing steps need exists.
+      MAC_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_API_KEY_P8 != '' }}
+      APP_PATH: ./flutter/build/macos/Build/Products/Release/RustDesk.app
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install build runtime
+        run: |
+          brew install llvm create-dmg
+          if command -v pkg-config &>/dev/null; then
+              echo "pkg-config is already installed"
+          else
+              brew install pkg-config
+          fi
+
+      - name: Install NASM
+        run: |
+          # As upstream: NASM 2.16.x from the official release, not brew's NASM 3.x.
+          wget https://www.nasm.us/pub/nasm/releasebuilds/2.16.03/macosx/nasm-2.16.03-macosx.zip
+          unzip nasm-2.16.03-macosx.zip
+          sudo cp nasm-2.16.03/nasm /usr/local/bin/nasm
+          nasm --version
+
+      - name: Install flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - name: Workaround for flutter issue
+        shell: bash
+        run: |
+          cd "$(dirname "$(which flutter)")"
+          # https://github.com/flutter/flutter/issues/133533
+          sed -i -e 's/_setFramesEnabledState(false);/\/\/_setFramesEnabledState(false);/g' ../packages/flutter/lib/src/scheduler/binding.dart
+          grep -n '_setFramesEnabledState(false);' ../packages/flutter/lib/src/scheduler/binding.dart
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.MAC_RUST_VERSION }}
+          targets: aarch64-apple-darwin
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: macos-14
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+          head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-arm64-osx-rel-out.log" || true
+
+      - name: Build the Mac app
+        run: |
+          MIN_MACOS_VERSION="12.3"
+          sed -i -e "s/MACOSX_DEPLOYMENT_TARGET\=[0-9]*.[0-9]*/MACOSX_DEPLOYMENT_TARGET=${MIN_MACOS_VERSION}/" build.py
+          sed -i -e "s/platform :osx, '.*'/platform :osx, '${MIN_MACOS_VERSION}'/" flutter/macos/Podfile
+          sed -i -e "s/osx_minimum_system_version = \"[0-9]*.[0-9]*\"/osx_minimum_system_version = \"${MIN_MACOS_VERSION}\"/" Cargo.toml
+          sed -i -e "s/MACOSX_DEPLOYMENT_TARGET = [0-9]*.[0-9]*;/MACOSX_DEPLOYMENT_TARGET = ${MIN_MACOS_VERSION};/" flutter/macos/Runner.xcodeproj/project.pbxproj
+          ./build.py --flutter --hwcodec --unix-file-copy-paste --screencapturekit
+
+      - name: Check the app identity and the built-in server
+        run: |
+          plutil -p "$APP_PATH/Contents/Info.plist" | grep -E '"CF(BundleIdentifier|BundleName|BundleDisplayName|BundleShortVersionString|BundleVersion)"'
+          test "$(plutil -extract CFBundleIdentifier raw "$APP_PATH/Contents/Info.plist")" = "com.loomnarulabs.emilliremote"
+          echo "Files with rd.emillis.net:"
+          grep -rl "rd.emillis.net" "$APP_PATH/Contents"
+          if grep -rl -e "rs-ny.rustdesk.com" -e "OeVuKk5nlHiXp" "$APP_PATH/Contents"; then
+            echo "RustDesk's public server is still built in" >&2
+            exit 1
+          fi
+
+      - name: Create the unsigned dmg
+        run: |
+          # As upstream: give create-dmg more attempts to unmount the image.
+          CREATE_DMG="$(command -v create-dmg)"
+          CREATE_DMG="$(readlink -f "$CREATE_DMG")"
+          sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
+          create-dmg --volname "Emilli Remote" --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 \
+            "emilli-remote-${VERSION}-macos-arm64-unsigned.dmg" "$APP_PATH"
+          shasum -a 256 "emilli-remote-${VERSION}-macos-arm64-unsigned.dmg"
+
+      - name: Upload the unsigned dmg
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-${{ env.VERSION }}-macos-arm64-unsigned
+          path: emilli-remote-${{ env.VERSION }}-macos-arm64-unsigned.dmg
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: error
+          compression-level: 0
+
+      # ---------------------------------------------------------------------------
+      # SIGNING, INACTIVE: the steps below run only when MAC_SIGNING is "true", that is
+      # once the secrets MACOS_CERT_P12, MACOS_CERT_PASSWORD, APPLE_API_KEY_ID,
+      # APPLE_API_ISSUER_ID and APPLE_API_KEY_P8 exist. Untested until then.
+      # ---------------------------------------------------------------------------
+      - name: "[signing] Import the Developer ID Application certificate"
+        if: env.MAC_SIGNING == 'true'
+        env:
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          printf '%s' "$MACOS_CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -P "$MACOS_CERT_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" > /dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep 'Developer ID Application' | head -n 1 | sed -E 's/.*"(.*)"/\1/')"
+          test -n "$IDENTITY"
+          echo "MAC_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+
+      - name: "[signing] Sign, notarise and staple the Mac app"
+        if: env.MAC_SIGNING == 'true'
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          bash ./.github/scripts/sign-macos-app.sh "$APP_PATH" "$MAC_SIGN_IDENTITY" ./flutter/macos/Runner/Release.entitlements
+          DMG="emilli-remote-${VERSION}-macos-arm64.dmg"
+          create-dmg --volname "Emilli Remote" --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 \
+            "$DMG" "$APP_PATH"
+          codesign --force --timestamp --sign "$MAC_SIGN_IDENTITY" "$DMG"
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+          xcrun notarytool submit "$DMG" --key "$KEY_PATH" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER_ID" --wait
+          rm -f "$KEY_PATH"
+          xcrun stapler staple "$DMG"
+          spctl --assess --type open --context context:primary-signature --verbose "$DMG"
+          shasum -a 256 "$DMG"
+
+      - name: "[signing] Upload the signed dmg"
+        if: env.MAC_SIGNING == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-${{ env.VERSION }}-macos-arm64
+          path: emilli-remote-${{ env.VERSION }}-macos-arm64.dmg
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: error
+          compression-level: 0
+
+  ios:
+    name: iPhone app
+    needs: bridge
+    runs-on: macos-latest
+    env:
+      # "true" only when every secret the iPhone signing step needs exists.
+      IOS_SIGNING: ${{ secrets.APPLE_TEAM_ID != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_API_KEY_P8 != '' }}
+    steps:
+      - name: Export GitHub Actions cache environment variables
+        uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
+        with:
+          script: |
+            core.exportVariable('ACTIONS_CACHE_URL', process.env.ACTIONS_CACHE_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
+
+      - name: Install dependencies
+        run: |
+          brew install nasm yasm
+
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - name: Install flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2
+        with:
+          channel: "stable"
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Patch flutter
+        run: |
+          cd $(dirname $(dirname $(which flutter)))
+          git apply ${{ github.workspace }}/.github/patches/flutter_3.24.4_dropdown_menu_enableFilter.diff
+
+      - name: Setup vcpkg with Github Actions binary cache
+        uses: lukka/run-vcpkg@b1a0dd252f06b9e25b3c022a9a03bd7a427fb6a2 # v11
+        with:
+          vcpkgGitCommitId: ${{ env.VCPKG_COMMIT_ID }}
+          doNotCache: false
+
+      - name: Install vcpkg dependencies
+        shell: bash
+        run: |
+          if ! $VCPKG_ROOT/vcpkg \
+            install \
+            --triplet arm64-ios \
+            --x-install-root="$VCPKG_ROOT/installed"; then
+            find "${VCPKG_ROOT}/" -name "*.log" | while read -r _1; do
+              echo "$_1:"
+              echo "======"
+              cat "$_1"
+              echo "======"
+              echo ""
+            done
+            exit 1
+          fi
+          head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-arm64-ios-rel-out.log" || true
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@e97e2d8cc328f1b50210efc529dca0028893a2d9 # v1
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          targets: aarch64-apple-ios
+          components: "rustfmt"
+
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          prefix-key: rustdesk-lib-cache-ios
+          key: aarch64-apple-ios
+
+      - name: Restore bridge files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: bridge-artifact
+          path: ./
+
+      - name: Build the Rust library
+        run: |
+          rustup target add aarch64-apple-ios
+          cargo build --locked --features flutter,hwcodec --release --target aarch64-apple-ios --lib
+
+      - name: Build the iPhone app without signing
+        shell: bash
+        run: |
+          pushd flutter
+          flutter build ipa --release --no-codesign
+          popd
+
+      - name: Package the unsigned ipa and check it
+        shell: bash
+        run: |
+          set -euo pipefail
+          APP="flutter/build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app"
+          plutil -p "$APP/Info.plist" | grep -E '"CF(BundleIdentifier|BundleName|BundleDisplayName|BundleShortVersionString|BundleVersion)"'
+          test "$(plutil -extract CFBundleIdentifier raw "$APP/Info.plist")" = "com.loomnarulabs.emilliremote"
+          echo "Files with rd.emillis.net:"
+          grep -rl "rd.emillis.net" "$APP"
+          if grep -rl -e "rs-ny.rustdesk.com" -e "OeVuKk5nlHiXp" "$APP"; then
+            echo "RustDesk's public server is still built in" >&2
+            exit 1
+          fi
+          rm -rf Payload && mkdir Payload
+          cp -R "$APP" Payload/
+          IPA="emilli-remote-${VERSION}-ios-unsigned.ipa"
+          zip -qry "$IPA" Payload
+          rm -rf Payload
+          shasum -a 256 "$IPA"
+
+      - name: Upload the unsigned ipa
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-${{ env.VERSION }}-ios-unsigned
+          path: emilli-remote-${{ env.VERSION }}-ios-unsigned.ipa
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: error
+          compression-level: 0
+
+      # ---------------------------------------------------------------------------
+      # SIGNING, INACTIVE: the step below runs only when IOS_SIGNING is "true", that is
+      # once the secrets APPLE_TEAM_ID, APPLE_API_KEY_ID, APPLE_API_ISSUER_ID and
+      # APPLE_API_KEY_P8 exist. Xcode then creates or reuses the signing certificate
+      # and profile through the App Store Connect API key, signs the app and uploads
+      # it to App Store Connect for TestFlight. Untested until then.
+      # ---------------------------------------------------------------------------
+      - name: "[signing] Sign the iPhone app and upload it to TestFlight"
+        if: env.IOS_SIGNING == 'true'
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
+          printf '%s\n' "$APPLE_API_KEY_P8" > "$KEY_PATH"
+          AUTH=(-allowProvisioningUpdates
+                -authenticationKeyPath "$KEY_PATH"
+                -authenticationKeyID "$APPLE_API_KEY_ID"
+                -authenticationKeyIssuerID "$APPLE_API_ISSUER_ID")
+          # Each TestFlight upload needs a new build number.
+          BUILD_NUMBER=$((1000 + GITHUB_RUN_NUMBER))
+          xcodebuild archive \
+            -workspace flutter/ios/Runner.xcworkspace -scheme Runner -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            FLUTTER_BUILD_NUMBER="$BUILD_NUMBER" "${AUTH[@]}"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><false/>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Runner.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" "${AUTH[@]}"
+          rm -f "$KEY_PATH"
+          echo "Uploaded build $BUILD_NUMBER of version $VERSION to App Store Connect."
