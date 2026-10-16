@@ -508,6 +508,11 @@ pub const VER_TYPE_RUSTDESK_CLIENT: &str = "rustdesk-client";
 pub const VER_TYPE_RUSTDESK_SERVER: &str = "rustdesk-server";
 
 pub fn version_check_request(typ: String) -> (VersionCheckRequest, String) {
+    // Emilli: the Mac app never asks RustDesk's server for a new version, so no update path can
+    // fetch official RustDesk; with no URL every version check fails before any request.
+    #[cfg(target_os = "macos")]
+    const URL: &str = "";
+    #[cfg(not(target_os = "macos"))]
     const URL: &str = "https://api.rustdesk.com/version/latest";
 
     use sysinfo::System;
