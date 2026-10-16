@@ -69,7 +69,11 @@ lazy_static::lazy_static! {
     static ref ONLINE: Mutex<HashMap<String, i64>> = Default::default();
     pub static ref PROD_RENDEZVOUS_SERVER: RwLock<String> = RwLock::new("".to_owned());
     pub static ref EXE_RENDEZVOUS_SERVER: RwLock<String> = Default::default();
-    pub static ref APP_NAME: RwLock<String> = RwLock::new("RustDesk".to_owned());
+    // Emilli: on macOS the app is "Emilli Remote" (Emilli Remote.app), so it installs next to
+    // official RustDesk with its own settings folder, logs, IPC sockets and launchd jobs.
+    pub static ref APP_NAME: RwLock<String> = RwLock::new(
+        if cfg!(target_os = "macos") { "Emilli Remote" } else { "RustDesk" }.to_owned()
+    );
     static ref KEY_PAIR: Mutex<Option<KeyPair>> = Default::default();
     static ref USER_DEFAULT_CONFIG: RwLock<(UserDefaultConfig, Instant)> = RwLock::new((UserDefaultConfig::load(), Instant::now()));
     pub static ref NEW_STORED_PEER_CONFIG: Mutex<HashSet<String>> = Default::default();

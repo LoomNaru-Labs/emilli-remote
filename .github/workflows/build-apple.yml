@@ -118,7 +118,7 @@ jobs:
     env:
       # "true" only when every secret the Mac signing steps need exists.
       MAC_SIGNING: ${{ secrets.MACOS_CERT_P12 != '' && secrets.MACOS_CERT_PASSWORD != '' && secrets.APPLE_API_KEY_ID != '' && secrets.APPLE_API_ISSUER_ID != '' && secrets.APPLE_API_KEY_P8 != '' }}
-      APP_PATH: ./flutter/build/macos/Build/Products/Release/RustDesk.app
+      APP_PATH: ./flutter/build/macos/Build/Products/Release/Emilli Remote.app
     steps:
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
@@ -218,6 +218,10 @@ jobs:
         run: |
           plutil -p "$APP_PATH/Contents/Info.plist" | grep -E '"CF(BundleIdentifier|BundleName|BundleDisplayName|BundleShortVersionString|BundleVersion)"'
           test "$(plutil -extract CFBundleIdentifier raw "$APP_PATH/Contents/Info.plist")" = "com.loomnarulabs.emilliremote"
+          # The executable must carry the app name: the app finds itself as
+          # /Applications/Emilli Remote.app/Contents/MacOS/Emilli Remote.
+          test -x "$APP_PATH/Contents/MacOS/Emilli Remote"
+          test -x "$APP_PATH/Contents/MacOS/service"
           echo "Files with rd.emillis.net:"
           grep -rl "rd.emillis.net" "$APP_PATH/Contents"
           if grep -rl -e "rs-ny.rustdesk.com" -e "OeVuKk5nlHiXp" "$APP_PATH/Contents"; then
@@ -231,7 +235,7 @@ jobs:
           CREATE_DMG="$(command -v create-dmg)"
           CREATE_DMG="$(readlink -f "$CREATE_DMG")"
           sed -i -e 's/MAXIMUM_UNMOUNTING_ATTEMPTS=3/MAXIMUM_UNMOUNTING_ATTEMPTS=7/' "$CREATE_DMG"
-          create-dmg --volname "Emilli Remote" --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 \
+          create-dmg --volname "Emilli Remote" --icon "Emilli Remote.app" 200 190 --hide-extension "Emilli Remote.app" --window-size 800 400 --app-drop-link 600 185 \
             "emilli-remote-${VERSION}-macos-arm64-unsigned.dmg" "$APP_PATH"
           shasum -a 256 "emilli-remote-${VERSION}-macos-arm64-unsigned.dmg"
 
@@ -280,7 +284,7 @@ jobs:
           set -euo pipefail
           bash ./.github/scripts/sign-macos-app.sh "$APP_PATH" "$MAC_SIGN_IDENTITY" ./flutter/macos/Runner/Release.entitlements
           DMG="emilli-remote-${VERSION}-macos-arm64.dmg"
-          create-dmg --volname "Emilli Remote" --icon "RustDesk.app" 200 190 --hide-extension "RustDesk.app" --window-size 800 400 --app-drop-link 600 185 \
+          create-dmg --volname "Emilli Remote" --icon "Emilli Remote.app" 200 190 --hide-extension "Emilli Remote.app" --window-size 800 400 --app-drop-link 600 185 \
             "$DMG" "$APP_PATH"
           codesign --force --timestamp --sign "$MAC_SIGN_IDENTITY" "$DMG"
           KEY_PATH="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
