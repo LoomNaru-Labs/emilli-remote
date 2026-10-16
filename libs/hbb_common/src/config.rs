@@ -1065,6 +1065,13 @@ impl Config {
                     id = (id << 8) | (*x as u32);
                 }
                 id &= 0x1FFFFFFF;
+                // Emilli: official RustDesk makes the same number from the same Mac, and the
+                // device id (uuid) is the same too, so both apps would claim one ID on the server.
+                // Our Mac IDs sit just above the whole range official RustDesk can make this way.
+                #[cfg(target_os = "macos")]
+                {
+                    id += 0x2000_0000;
+                }
                 log::info!("Generated id {}", id);
                 Some(id.to_string())
             } else {
