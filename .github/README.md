@@ -15,8 +15,8 @@ history):
 - On Mac the app is `Emilli Remote.app`, so it installs next to an official
   RustDesk instead of replacing it, with its own settings, its own device ID and its
   own background service. Direct IP access is always off, the app never updates
-  itself from official RustDesk, and its update and download actions open the
-  Emilli Remote download page. The icon is still RustDesk's.
+  itself from official RustDesk, and its update and download actions only say that
+  your administrator sends new versions. The icon is still RustDesk's.
 - The only build here is [`build-apple.yml`](workflows/build-apple.yml), which builds
   the Mac app (Apple Silicon) and the iPhone app on GitHub's macOS runners. Our
   Android app is built elsewhere from the same RustDesk 1.5.0 source with the same
