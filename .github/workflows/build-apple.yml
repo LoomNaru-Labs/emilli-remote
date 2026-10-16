@@ -228,6 +228,12 @@ jobs:
             echo "RustDesk's public server is still built in" >&2
             exit 1
           fi
+          # No official update source either: RustDesk's version check, its download page
+          # and its GitHub releases.
+          if grep -rl -e "api.rustdesk.com/version" -e "rustdesk.com/download" -e "github.com/rustdesk/rustdesk/releases" "$APP_PATH/Contents"; then
+            echo "An official RustDesk update URL is still built in" >&2
+            exit 1
+          fi
 
       - name: Create the unsigned dmg
         run: |
