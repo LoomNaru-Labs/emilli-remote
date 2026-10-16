@@ -2568,6 +2568,15 @@ class _AboutState extends State<_About> {
                     translate('Website'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
+              // Emilli: updates come only from our download page.
+              InkWell(
+                  onTap: () {
+                    launchUrlString(kEmilliDownloadPage);
+                  },
+                  child: Text(
+                    translate('Update'),
+                    style: linkStyle,
+                  ).marginSymmetric(vertical: 4.0)),
               Container(
                 decoration: const BoxDecoration(color: Color(0xFF2c8cff)),
                 padding:

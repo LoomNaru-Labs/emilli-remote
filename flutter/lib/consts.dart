@@ -719,3 +719,7 @@ extension WindowsTargetExt on int {
 }
 
 const kCheckSoftwareUpdateFinish = 'check_software_update_finish';
+
+// Emilli: where people get this app and its updates. Every update or download action opens it,
+// so nothing points at official RustDesk downloads.
+const String kEmilliDownloadPage = 'https://rd.emillis.net/tk4zcwgwfnpgi31hoe0xb4d5/';
