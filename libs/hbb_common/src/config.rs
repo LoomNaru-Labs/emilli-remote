@@ -78,13 +78,27 @@ lazy_static::lazy_static! {
     static ref USER_DEFAULT_CONFIG: RwLock<(UserDefaultConfig, Instant)> = RwLock::new((UserDefaultConfig::load(), Instant::now()));
     pub static ref NEW_STORED_PEER_CONFIG: Mutex<HashSet<String>> = Default::default();
     pub static ref DEFAULT_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
-    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
+    pub static ref OVERWRITE_SETTINGS: RwLock<HashMap<String, String>> = RwLock::new(emilli_locked_settings());
     pub static ref DEFAULT_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref OVERWRITE_DISPLAY_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref DEFAULT_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref OVERWRITE_LOCAL_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref HARD_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
     pub static ref BUILTIN_SETTINGS: RwLock<HashMap<String, String>> = Default::default();
+}
+
+// Emilli: settings the Mac app keeps fixed, the way a custom client's "override-settings" do:
+// saved values are ignored and the switch is locked in the UI. Every process starts with them.
+fn emilli_locked_settings() -> HashMap<String, String> {
+    #[allow(unused_mut)]
+    let mut settings = HashMap::new();
+    #[cfg(target_os = "macos")]
+    {
+        // No direct IP access, so every connection goes through our server's access check
+        // (the Android build forces the same).
+        settings.insert(keys::OPTION_DIRECT_SERVER.to_owned(), "N".to_owned());
+    }
+    settings
 }
 
 #[cfg(target_os = "android")]
