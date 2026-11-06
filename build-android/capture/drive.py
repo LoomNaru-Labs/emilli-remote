@@ -233,7 +233,7 @@ def main():
 
     # 2. The "Share screen" tab: this phone's ID and password, service not started.
     if d.tap_find("Share screen tab", pattern=r"화면 공유|Share screen"):
-        d.shot("share-screen-id")
+        d.shot("share-screen")
 
     # 3. Start service: the app's own warning first (its button unlocks after 12 seconds).
     if d.tap_find("Start service", pattern=r"^(서비스 시작|Start service)"):
@@ -284,7 +284,7 @@ def main():
     d.shot("sharing-on-id", settle=3)
 
     # 8. Input control: the app's notice, then Android's Accessibility settings.
-    if d.tap_find("Input Control", pattern=r"^(입력 제어|Input Control)"):
+    if d.tap_find("Input Control", pattern=r"(?i)^(입력 제어|Input control)"):
         d.shot("input-control-notice")
         if d.tap_find("Open System Setting", pattern=r"^(시스템 설정 열기|Open System Setting)"):
             d.shot("accessibility-list", settle=3)
@@ -309,10 +309,12 @@ def main():
     # 9. Settings, the built-in server, and the login screen.
     if d.tap_find("Settings tab", pattern=r"^(설정|Settings)(\n|$)"):
         d.shot("settings")
-        if d.tap_find("ID/Relay Server", scroll=True, pattern=r"^(ID/릴레이 서버|ID/Relay Server)", timeout=6):
+        # The server is built in, so this dialog shows empty fields; Cancel closes it.
+        if d.tap_find("ID/Relay Server", pattern=r"(?i)^(ID/릴레이 서버|ID/Relay server)", timeout=6):
             d.shot("server-settings")
-            d.back()
-        if d.tap_find("Login", scroll=True, pattern=r"^(로그인|Login)", timeout=6):
+            d.tap_find("Cancel", pattern=r"^(취소|Cancel)$", timeout=5)
+            time.sleep(1.5)
+        if d.tap_find("Login", pattern=r"^(로그인|Login)$", timeout=6):
             d.shot("login")
             d.back()
 
