@@ -1,0 +1,37 @@
+Emilli Remote for Windows, branch windows-emilli
+================================================
+
+This branch is the complete corresponding source of the Windows program that
+Emilli Remote Setup (branch easy-windows) installs: RustDesk 1.5.0 for
+Windows x64, built by LoomNaru Labs Inc with the workflow
+.github/workflows/build-windows-emilli.yml. It is a modified version of
+RustDesk, the open source remote desktop software by Purslane Tech Pte. Ltd.
+and the RustDesk contributors (https://github.com/rustdesk/rustdesk).
+RustDesk is licensed under the GNU Affero General Public License, version 3
+(AGPL-3.0); see the file LICENCE. This modified version is distributed under
+the same licence, without any warranty.
+
+Base: RustDesk tag 1.5.0, commit fada664df7a294d1d1a9ca3e7cd3637069122f17,
+with libs/hbb_common at commit 229b904508364c8997aad0fb5af57effac859f60
+included as plain files (the first commit, shared with main and
+android-play), then upstream's workflows removed (shared with android-play).
+
+Changes, each in its own commit:
+
+1. res/icon.ico, res/tray-icon.ico, flutter/windows/runner/resources/app_icon.ico,
+   flutter/assets/icon.svg: the Emilli Remote icon for the program, its window,
+   taskbar, shortcuts, tray and the in-app icon.
+2. src/common.rs: the program never asks RustDesk's servers for a new version,
+   so it shows no update notice and never updates itself to the official
+   RustDesk build.
+3. flutter/lib/common.dart, src/tray.rs, src/platform/windows.rs: "Emilli
+   Remote" is the name shown in the title bar, the tray tooltip and Programs
+   and Features (publisher LoomNaru Labs Inc). The internal name stays
+   "RustDesk": install folder, settings folders, service, pipes, registry key,
+   shortcut file names and server settings are unchanged.
+4. .github/workflows/build-windows-emilli.yml, NOTICE, .github/README.md: the
+   build, following upstream's own Windows job at tag 1.5.0.
+
+"RustDesk" is the name of the upstream project. This build is not made,
+endorsed or supported by the RustDesk developers. For the official RustDesk
+apps, go to https://rustdesk.com or https://github.com/rustdesk/rustdesk.
