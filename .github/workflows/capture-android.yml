@@ -157,8 +157,12 @@ jobs:
           "$sdk/sdkmanager" --install emulator platform-tools "$SYSTEM_IMAGE" > /dev/null
           echo no | "$sdk/avdmanager" create avd -n capture -k "$SYSTEM_IMAGE" -d pixel_6 --force
           "$ANDROID_HOME/emulator/emulator" -version | head -n 1
-          missing=$(ldd "$ANDROID_HOME/emulator/qemu/linux-x86_64/qemu-system-x86_64" | grep "not found" || true)
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
+          # System libraries qemu needs that are neither on the runner nor bundled with the emulator.
+          missing=""
+          for lib in $(ldd "$ANDROID_HOME/emulator/qemu/linux-x86_64/qemu-system-x86_64" | awk '/not found/ {print $1}'); do
+            [ -n "$(find "$ANDROID_HOME/emulator" -name "$lib" -print -quit)" ] || missing="$missing $lib"
+          done
+          if [ -n "$missing" ]; then echo "missing system libraries:$missing"; exit 1; fi
 
       - name: Start the emulator
         run: |
