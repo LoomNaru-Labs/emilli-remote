@@ -21,6 +21,11 @@ history):
   the Mac app (Apple Silicon) and the iPhone app on GitHub's macOS runners. Our
   Android app is built elsewhere from the same RustDesk 1.5.0 source with the same
   server changes plus a few Android-only ones.
+- On the `easy-windows` branch, [`build-windows-easy.yml`](workflows/build-windows-easy.yml)
+  builds "Emilli Remote Setup" from [`windows-easy/`](../windows-easy): a next-next
+  installer around the official, unmodified RustDesk 1.5.0 for Windows that saves
+  `rd.emillis.net` as the server (and a password on a store PC), tested on GitHub's
+  Windows runners.
 
 The apps are not signed yet, so they are not ready to hand out. Signing and
 TestFlight are described in [docs/APPLE_SIGNING_NEXT.md](../docs/APPLE_SIGNING_NEXT.md).

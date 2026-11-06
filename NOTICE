@@ -55,6 +55,16 @@ unchanged by these, apart from shared text in item 11):
 12. build-apple.yml: the Mac build fails if RustDesk's public server, its
     version check, its download page or its GitHub releases are built in.
 
+Added on 2026-11-06 for Windows (branch easy-windows):
+
+13. windows-easy/ and .github/workflows/build-windows-easy.yml: "Emilli
+    Remote Setup", an installer that carries the official, unmodified
+    RustDesk 1.5.0 Windows installer (rustdesk-1.5.0-x86_64.exe from
+    https://github.com/rustdesk/rustdesk/releases/tag/1.5.0, SHA-256
+    checked) and runs RustDesk's own command line to install it and to save
+    rd.emillis.net as its server, plus a password for a store PC. No
+    RustDesk code is changed for Windows; its source is upstream tag 1.5.0.
+
 Everything else is unchanged upstream code. The complete history of the
 changes is the git history of this repository.
 

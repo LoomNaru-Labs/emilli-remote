@@ -1,0 +1,166 @@
+# Builds and tests "Emilli Remote Setup" (windows-easy/), the next-next Windows installer that
+# carries the official, unmodified RustDesk 1.5.0 and points it at rd.emillis.net.
+#
+# build: download the official RustDesk installer and check its SHA-256 and signer, install a
+#        pinned Inno Setup, compile the setup, sign it (only once the Artifact Signing
+#        secrets exist; until then it stays unsigned) and keep it as an artifact.
+# test:  on a fresh runner, run the setup silently as a store PC and then as a controller,
+#        check the service, the settings files, the store PC password and --get-id after
+#        each, and uninstall between the runs. rd.emillis.net is blocked in the runner's
+#        hosts file, so the test never registers a device on our server.
+name: Build Windows setup
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [easy-windows]
+    paths:
+      - "windows-easy/**"
+      - ".github/workflows/build-windows-easy.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-easy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION: "1.5.0"
+  RUSTDESK_URL: https://github.com/rustdesk/rustdesk/releases/download/1.5.0/rustdesk-1.5.0-x86_64.exe
+  RUSTDESK_SHA256: 8555777215510d83d2d61c9dc984e4fcc838bd7e79f9d18a42585431f5e8bb47
+  INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
+  INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
+  PYNACL_VERSION: "1.5.0"
+  RETENTION_DAYS: 30
+
+jobs:
+  build:
+    name: Build the setup
+    runs-on: windows-latest
+    env:
+      # "true" only once the signing secrets are set in this repository.
+      SIGNING_ENABLED: ${{ secrets.ARTIFACT_SIGNING_ACCOUNT != '' && secrets.AZURE_CLIENT_ID != '' }}
+    steps:
+      - name: Checkout the setup sources
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: windows-easy
+          persist-credentials: false
+
+      - name: Download the official RustDesk installer and check it
+        shell: pwsh
+        run: |
+          $dir = Join-Path $env:RUNNER_TEMP 'rustdesk'
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $exe = Join-Path $dir "rustdesk-$env:VERSION-x86_64.exe"
+          Invoke-WebRequest -Uri $env:RUSTDESK_URL -OutFile $exe
+          $hash = (Get-FileHash -Algorithm SHA256 $exe).Hash.ToLower()
+          Write-Host "SHA-256 $hash"
+          if ($hash -ne $env:RUSTDESK_SHA256) { throw "RustDesk installer SHA-256 mismatch" }
+          $sig = Get-AuthenticodeSignature $exe
+          Write-Host "Signature $($sig.Status), signer $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'CN=PURSLANE') { throw "RustDesk installer signature is not PURSLANE's" }
+          "RUSTDESK_DIR=$dir" >> $env:GITHUB_ENV
+
+      - name: Install Inno Setup 6.7.4 (pinned)
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          Invoke-WebRequest -Uri $env:INNO_URL -OutFile $installer
+          $hash = (Get-FileHash -Algorithm SHA256 $installer).Hash.ToLower()
+          if ($hash -ne $env:INNO_SHA256) { throw "Inno Setup installer SHA-256 mismatch" }
+          $sig = Get-AuthenticodeSignature $installer
+          Write-Host "Inno Setup signature $($sig.Status), signer $($sig.SignerCertificate.Subject)"
+          if ($sig.Status -ne 'Valid') { throw "Inno Setup installer is not validly signed" }
+          $dir = Join-Path $env:RUNNER_TEMP 'inno'
+          Start-Process -FilePath $installer -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/CURRENTUSER', "/DIR=$dir" -Wait
+          if (-not (Test-Path (Join-Path $dir 'ISCC.exe'))) { throw "ISCC.exe not found" }
+          "ISCC=$(Join-Path $dir 'ISCC.exe')" >> $env:GITHUB_ENV
+
+      - name: Compile the setup
+        shell: pwsh
+        run: |
+          & $env:ISCC "/DRustDeskDir=$env:RUSTDESK_DIR" "/O$env:GITHUB_WORKSPACE\out" windows-easy\EmilliRemoteSetup.iss
+          if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
+          Get-ChildItem out | Format-Table Name, Length
+
+      - name: "[signing] Sign the setup with Artifact Signing"
+        if: env.SIGNING_ENABLED == 'true'
+        uses: azure/artifact-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.ARTIFACT_SIGNING_ENDPOINT }}
+          signing-account-name: ${{ secrets.ARTIFACT_SIGNING_ACCOUNT }}
+          certificate-profile-name: ${{ secrets.ARTIFACT_SIGNING_PROFILE }}
+          files: ${{ github.workspace }}\out\Emilli-Remote-Setup-${{ env.VERSION }}.exe
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+          description: Emilli Remote Setup
+
+      - name: Show the signature state and the hash
+        shell: pwsh
+        run: |
+          $setup = "out\Emilli-Remote-Setup-$env:VERSION.exe"
+          $sig = Get-AuthenticodeSignature $setup
+          Write-Host "Signing enabled: $env:SIGNING_ENABLED; signature $($sig.Status) $($sig.SignerCertificate.Subject)"
+          if ($env:SIGNING_ENABLED -eq 'true' -and $sig.Status -ne 'Valid') { throw "Signing was enabled but the setup is not validly signed" }
+          Write-Host "SHA-256 $((Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower())  $((Get-Item $setup).Length) bytes"
+
+      - name: Upload the setup
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: out/Emilli-Remote-Setup-${{ env.VERSION }}.exe
+          retention-days: ${{ env.RETENTION_DAYS }}
+          compression-level: 0
+          if-no-files-found: error
+
+  test:
+    name: Install, check and uninstall (store PC, then controller)
+    needs: build
+    runs-on: windows-latest
+    steps:
+      - name: Checkout the test scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: windows-easy
+          persist-credentials: false
+
+      - name: Download the setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: setup
+
+      - name: Prepare the runner
+        shell: pwsh
+        run: |
+          # Keep the test away from our real server: no test device on rd.emillis.net.
+          Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
+          ipconfig /flushdns | Out-Null
+          Resolve-DnsName rd.emillis.net -ErrorAction SilentlyContinue | Format-Table Name, IPAddress
+          python -m pip install --disable-pip-version-check --quiet "pynacl==$env:PYNACL_VERSION"
+          python --version
+          Write-Host "Windows $([Environment]::OSVersion.VersionString); session $((Get-Process -Id $PID).SessionId); user $env:USERNAME"
+
+      - name: Store PC run
+        shell: pwsh
+        run: pwsh -NoProfile -File windows-easy\test-easy-setup.ps1 -Mode store -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Work "$env:RUNNER_TEMP\easy"
+
+      - name: Controller run
+        if: success() || failure()
+        shell: pwsh
+        run: pwsh -NoProfile -File windows-easy\test-easy-setup.ps1 -Mode control -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Work "$env:RUNNER_TEMP\easy"
+
+      - name: Keep the Setup logs
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-setup-test-logs
+          path: ${{ runner.temp }}\easy\*.log
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn
