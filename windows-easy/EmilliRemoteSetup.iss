@@ -256,7 +256,8 @@ begin
   end;
   { The official file is RustDesk's packer (libs/portable): it unpacks the app and starts it
     with the same arguments without waiting, so wait below for the installed copy and its
-    service. The working folder is not {tmp}, so Setup can still remove {tmp} at the end. }
+    service. The working folder is the system folder, not Setup's temporary folder, so Setup
+    can still remove its temporary folder at the end. }
   if not Exec(Src, '--silent-install', ExpandConstant('{sys}'), SW_HIDE, ewWaitUntilTerminated,
     ResultCode) then
   begin
