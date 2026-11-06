@@ -286,7 +286,7 @@ def main():
     # 8. Input control: the app's notice, then Android's Accessibility settings.
     if d.tap_find("Input Control", pattern=r"(?i)^(입력 제어|Input control)"):
         d.shot("input-control-notice")
-        if d.tap_find("Open System Setting", pattern=r"^(시스템 설정 열기|Open System Setting)"):
+        if d.tap_find("Open System Setting", pattern=r"(?i)^(시스템 설정 열기|Open system setting)"):
             d.shot("accessibility-list", settle=3)
             if d.tap_find("the input service in the list", scroll=True, pattern=r"RustDesk Input|Emilli 원격 입력", pkg="com.android.settings", timeout=6):
                 d.shot("accessibility-service")
@@ -305,6 +305,8 @@ def main():
                 d.back()
             sh(f"monkey -p {PKG} -c android.intent.category.LAUNCHER 1")
             d.shot("input-control-on", settle=3)
+        else:
+            d.tap_find("Cancel on the notice", pattern=r"^(취소|Cancel)$", timeout=5)
 
     # 9. Settings, the built-in server, and the login screen.
     if d.tap_find("Settings tab", pattern=r"^(설정|Settings)(\n|$)"):
