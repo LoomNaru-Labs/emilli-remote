@@ -53,6 +53,12 @@ fn initialize(app_dir: &str, custom_client_config: &str) {
     } else {
         crate::read_custom_client(custom_client_config);
     }
+    // Emilli: no direct IP access, so every connection goes through our server's access check.
+    #[cfg(target_os = "android")]
+    config::OVERWRITE_SETTINGS.write().unwrap().insert(
+        keys::OPTION_DIRECT_SERVER.to_owned(),
+        "N".to_owned(),
+    );
     #[cfg(target_os = "android")]
     {
         // flexi_logger can't work when android_logger initialized.
