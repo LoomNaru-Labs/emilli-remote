@@ -12,7 +12,7 @@ commit, so `git log` shows them in order.
 
 - `Dockerfile`: the toolchain image, with the same versions as upstream's CI at
   tag 1.5.0 (Rust 1.75, NDK r28c, Flutter 3.24.5, vcpkg pinned).
-- `build.sh step play`: clones upstream tag 1.5.0, applies `patches/01` to `06`,
+- `build.sh step play`: clones upstream tag 1.5.0, applies `patches/01` to `07`,
   copies `icons/res`, generates the Flutter-Rust bridge, builds the native library
   for arm64-v8a and armeabi-v7a, builds the app bundle and checks it.
 - The container mounts this recipe at `/recipe` (read only), the signing key folder

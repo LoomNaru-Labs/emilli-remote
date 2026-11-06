@@ -3,7 +3,7 @@ Emilli Remote for Android ("Emilli 원격"), branch android-play
 
 This branch is the complete corresponding source of the Android app
 "Emilli 원격" (package net.emillis.remote) that LoomNaru Labs Inc builds for
-Google Play, version 1.5.0, versionCode 71. It is a modified version of
+Google Play, version 1.5.0, versionCode 72. It is a modified version of
 RustDesk, the open source remote desktop software by Purslane Tech Pte. Ltd.
 and the RustDesk contributors (https://github.com/rustdesk/rustdesk).
 RustDesk is licensed under the GNU Affero General Public License, version 3
@@ -36,6 +36,15 @@ Changes, each in its own commit after the base:
 8. build-android/: the build recipe (Docker toolchain, build steps, the same
    changes as patch files, the icon drawing script). NOTICE and
    .github/README.md are new.
+9. flutter/android/app/src/main/res/drawable/floating_window.xml and
+   flutter/assets/icon.svg: the Emilli Remote drawing replaces RustDesk's logo
+   in the floating window and the in-app icon; AndroidManifest.xml and
+   res/values/strings.xml: the Accessibility service is named "Emilli 원격 입력"
+   and its description and the app_name string say Emilli; flutter/pubspec.yaml:
+   version 1.5.0+72.
+10. .github/workflows/capture-android.yml and build-android/capture/: a
+   screenshot workflow for the Emilli Remote manual (x86_64 build for the
+   Android emulator, signed with a throwaway key, never published).
 
 The Google Play build is made from upstream tag 1.5.0 plus the patch files in
 build-android/patches, which give exactly the tree of this branch outside
