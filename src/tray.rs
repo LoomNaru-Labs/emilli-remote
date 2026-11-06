@@ -6,6 +6,10 @@ use hbb_common::tokio;
 use hbb_common::{allow_err, log};
 use base::config::keys;
 use std::sync::{Arc, Mutex};
+
+// Emilli: the name shown in the tray tooltip. The internal app name (config folder, service,
+// pipes) stays "RustDesk".
+const DISPLAY_NAME: &str = "Emilli Remote";
 #[cfg(windows)]
 use std::time::Duration;
 
@@ -84,13 +88,13 @@ fn make_tray() -> hbb_common::ResultType<()> {
         if count == 0 {
             format!(
                 "{} {}",
-                crate::get_app_name(),
+                DISPLAY_NAME,
                 translate("Service is running".to_owned()),
             )
         } else {
             format!(
                 "{} - {}\n{}",
-                crate::get_app_name(),
+                DISPLAY_NAME,
                 translate("Ready".to_owned()),
                 translate("{".to_string() + &format!("{count}") + "} sessions"),
             )

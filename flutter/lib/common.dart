@@ -3021,7 +3021,9 @@ int versionCmp(String v1, String v2) {
 }
 
 String getWindowName({WindowType? overrideType}) {
-  final name = bind.mainGetAppNameSync();
+  // Emilli: the name shown in the title bar and taskbar on Windows. The internal app name
+  // (config folder, service, pipes) stays "RustDesk".
+  final name = isWindows ? 'Emilli Remote' : bind.mainGetAppNameSync();
   switch (overrideType ?? kWindowType) {
     case WindowType.Main:
       return name;
