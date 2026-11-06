@@ -563,8 +563,8 @@ begin
   begin
     WizardForm.FinishedHeadingLabel.Caption := '설치가 끝나지 않았습니다' + #13#10 + 'Setup did not finish';
     WizardForm.FinishedLabel.Caption :=
-      '이 화면을 사진 찍어 Paul 팀에 보내 주세요.' + #13#10 +
-      'Take a photo of this screen and send it to the Paul team.' + #13#10 + #13#10 + InstallError;
+      '이 화면을 사진 찍어 Emilli 담당자에게 보내 주세요.' + #13#10 +
+      'Take a photo of this screen and send it to your Emilli contact.' + #13#10 + #13#10 + InstallError;
   end;
   WizardForm.AdjustLabelHeight(WizardForm.FinishedLabel);
   if InstallError <> '' then
@@ -584,8 +584,8 @@ begin
   NextStepLabel.Top := CopyButton.Top + CopyButton.Height + ScaleY(18);
   NextStepLabel.Width := W;
   if StoreMode then
-    NextStepLabel.Caption := '이 ID를 매장 이름과 함께 Paul 팀에 보내 주세요.' + #13#10 +
-      'Send this ID with the store name to the Paul team.'
+    NextStepLabel.Caption := '이 ID를 매장 이름과 함께 Emilli 담당자에게 보내 주세요.' + #13#10 +
+      'Send this ID with the store name to your Emilli contact.'
   else
     NextStepLabel.Caption := '바탕화면의 RustDesk를 열고 내 계정으로 로그인하세요.' + #13#10 +
       'Open RustDesk from the desktop and log in with your account.';
