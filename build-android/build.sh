@@ -77,7 +77,7 @@ step_patch() {
   log "applied: 01-hbb_common-builtin-server.patch"
   local p
   for p in 02-android-app-id-and-label 03-api-server-default 04-play-no-update-check \
-           05-android-accessibility-disclosure 06-emilli-icon-vc71; do
+           05-android-accessibility-disclosure 06-emilli-icon-vc71 07-emilli-in-app-images-vc72; do
     git -C "$SRC" apply "/recipe/patches/$p.patch"
     log "applied: $p.patch"
   done

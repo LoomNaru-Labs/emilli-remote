@@ -278,7 +278,7 @@ def main():
         d.shot("input-control-notice")
         if d.tap_find("Open System Setting", pattern=r"^(시스템 설정 열기|Open System Setting)"):
             d.shot("accessibility-list", settle=3)
-            if d.tap_find("RustDesk Input in the list", scroll=True, pattern=r"RustDesk Input", pkg="com.android.settings", timeout=6):
+            if d.tap_find("the input service in the list", scroll=True, pattern=r"RustDesk Input|Emilli 원격 입력", pkg="com.android.settings", timeout=6):
                 d.shot("accessibility-service")
                 sw = d.find(pkg="com.android.settings", checkable=True, timeout=5)
                 if sw:
