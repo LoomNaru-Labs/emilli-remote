@@ -3,11 +3,11 @@
 # for -Scale percent (the same setting as Settings, Display, Scale) without signing out.
 # Prints what it got; it never fails the job, because the screenshots show the real result.
 #
-#   powershell -File windows-easy/capture-display.ps1 -Width 1920 -Height 1080 -Scale 200
+#   powershell -File windows-capture/capture-display.ps1 -Width 1920 -Height 1080 -Scale 175
 param(
     [int] $Width = 1920,
     [int] $Height = 1080,
-    [int] $Scale = 200
+    [int] $Scale = 175
 )
 $ErrorActionPreference = 'Stop'
 

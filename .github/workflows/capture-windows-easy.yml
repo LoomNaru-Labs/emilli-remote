@@ -3,10 +3,10 @@
 # Takes the Setup that the "Build Windows setup" run SETUP_RUN_ID built and tested (its
 # SHA-256 is checked), runs it interactively on fresh windows-latest runners as a store PC and
 # then as a controller (uninstalling in between), clicks through every page and saves a PNG of
-# each page and of RustDesk's main window. Korean and English Setup, at 100% and 200% display
-# scale (200% only if the runner allows it; the log says what it got). rd.emillis.net is blocked
-# in the runner's hosts file, so no runner device ever reaches our server. The screenshots are
-# kept as artifacts for 3 days only.
+# each page and of RustDesk's main window. Korean and English Setup, at 100% display scale and
+# at 175% on a 1920x1080 screen (the most the runner allows there; 200% is not offered, the log
+# lists what Windows allows). rd.emillis.net is blocked in the runner's hosts file, so no runner
+# device ever reaches our server. The screenshots are kept as artifacts for 3 days only.
 name: Capture Windows setup screens
 
 on:
@@ -14,7 +14,7 @@ on:
   push:
     branches: [easy-windows]
     paths:
-      - "windows-easy/capture-*.ps1"
+      - "windows-capture/**"
       - ".github/workflows/capture-windows-easy.yml"
 
 permissions:
@@ -40,14 +40,14 @@ jobs:
       fail-fast: false
       matrix:
         lang: [ko, en]
-        scale: [100, 200]
+        scale: [100, 175]
     env:
-      TAG: ${{ matrix.lang }}${{ matrix.scale == 200 && '@2x' || '' }}
+      TAG: ${{ matrix.lang }}${{ matrix.scale != 100 && format('-{0}', matrix.scale) || '' }}
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
-          sparse-checkout: windows-easy
+          sparse-checkout: windows-capture
           persist-credentials: false
 
       - name: Download the tested setup
@@ -73,16 +73,16 @@ jobs:
       - name: Display size and scale
         if: matrix.scale != 100
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-display.ps1 -Width 1920 -Height 1080 -Scale ${{ matrix.scale }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale ${{ matrix.scale }}
 
       - name: Store PC screens
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-easy-setup.ps1 -Mode store -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-easy-setup.ps1 -Mode store -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
 
       - name: Controller screens
         if: success() || failure()
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-easy-setup.ps1 -Mode control -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-easy-setup.ps1 -Mode control -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
 
       - name: Keep the screenshots
         if: always()
