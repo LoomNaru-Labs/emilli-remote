@@ -123,7 +123,8 @@ jobs:
     name: Mac app (Apple Silicon)
     needs: bridge
     if: inputs.apps != 'iphone'
-    runs-on: macos-14
+    # macos-14 runners are no longer offered (2026-11-06: "macos-14-arm64-us-default is not supported").
+    runs-on: macos-15
     env:
       # Branch apple-emilli (icon check): signing and notarisation stay off here, whatever
       # secrets exist; main keeps the signing gate.
@@ -185,7 +186,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
-          prefix-key: macos-14
+          prefix-key: macos-15
 
       - name: Restore bridge files
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
