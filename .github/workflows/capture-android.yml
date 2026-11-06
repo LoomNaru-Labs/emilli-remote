@@ -117,6 +117,9 @@ jobs:
       fail-fast: false
       matrix:
         locale: [ko-KR, en-US]
+    env:
+      # One folder for the virtual device, for avdmanager and the emulator alike.
+      ANDROID_AVD_HOME: /home/runner/.android/avd
     steps:
       - name: Checkout the driver
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -155,7 +158,9 @@ jobs:
           sdk="$ANDROID_HOME/cmdline-tools/latest/bin"
           (yes || true) | "$sdk/sdkmanager" --licenses > /dev/null
           "$sdk/sdkmanager" --install emulator platform-tools "$SYSTEM_IMAGE" > /dev/null
+          mkdir -p "$ANDROID_AVD_HOME"
           echo no | "$sdk/avdmanager" create avd -n capture -k "$SYSTEM_IMAGE" -d pixel_6 --force
+          "$ANDROID_HOME/emulator/emulator" -list-avds
           "$ANDROID_HOME/emulator/emulator" -version | head -n 1
           # System libraries qemu needs that are neither on the runner nor bundled with the emulator.
           missing=""
