@@ -1018,6 +1018,11 @@ pub fn is_modifier(evt: &KeyEvent) -> bool {
 }
 
 pub fn check_software_update() {
+    // Emilli: never ask RustDesk's servers for a newer version. Google Play or the
+    // administrator delivers updates (Play policy: no updates outside Play).
+    if true {
+        return;
+    }
     if is_custom_client() {
         return;
     }
