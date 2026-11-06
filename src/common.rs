@@ -1031,6 +1031,12 @@ pub fn check_software_update() {
 // Because the url is always `https://api.rustdesk.com/version/latest`.
 #[tokio::main(flavor = "current_thread")]
 pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
+    // Emilli: never ask RustDesk's servers for a newer version, so no update notice, no
+    // automatic update and no download of the official RustDesk build replaces this one.
+    // Updates come from Emilli Remote Setup.
+    if true {
+        return Ok(());
+    }
     let (request, url) =
         hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_CLIENT.to_string());
     let proxy_conf = Config::get_socks();
