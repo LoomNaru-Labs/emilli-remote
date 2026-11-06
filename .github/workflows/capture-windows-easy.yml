@@ -1,0 +1,94 @@
+# Screenshots of "Emilli Remote Setup" for the Emilli Remote manual.
+#
+# Takes the Setup that the "Build Windows setup" run SETUP_RUN_ID built and tested (its
+# SHA-256 is checked), runs it interactively on fresh windows-latest runners as a store PC and
+# then as a controller (uninstalling in between), clicks through every page and saves a PNG of
+# each page and of RustDesk's main window. Korean and English Setup, at 100% and 200% display
+# scale (200% only if the runner allows it; the log says what it got). rd.emillis.net is blocked
+# in the runner's hosts file, so no runner device ever reaches our server. The screenshots are
+# kept as artifacts for 3 days only.
+name: Capture Windows setup screens
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [easy-windows]
+    paths:
+      - "windows-easy/capture-*.ps1"
+      - ".github/workflows/capture-windows-easy.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: capture-windows-easy-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION: "1.5.0"
+  SETUP_RUN_ID: "42174579291"
+  SETUP_SHA256: 1b5e1d74f4791c1b00d298fdba2290e44d3046a16ae452fe9ceac6b75b200e06
+  RETENTION_DAYS: 3
+
+jobs:
+  capture:
+    name: Setup screens (${{ matrix.lang }}, ${{ matrix.scale }}%)
+    runs-on: windows-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        lang: [ko, en]
+        scale: [100, 200]
+    env:
+      TAG: ${{ matrix.lang }}${{ matrix.scale == 200 && '@2x' || '' }}
+    steps:
+      - name: Checkout the capture scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: windows-easy
+          persist-credentials: false
+
+      - name: Download the tested setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: setup
+          run-id: ${{ env.SETUP_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Check the setup and prepare the runner
+        shell: powershell
+        run: |
+          $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+          Write-Host "Setup SHA-256 $hash"
+          if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          # Keep the runner away from our real server: no runner device on rd.emillis.net.
+          Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
+          ipconfig /flushdns | Out-Null
+          Write-Host "Windows $([Environment]::OSVersion.VersionString); session $((Get-Process -Id $PID).SessionId); user $env:USERNAME; UI language $((Get-UICulture).Name)"
+
+      - name: Display size and scale
+        if: matrix.scale != 100
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-display.ps1 -Width 1920 -Height 1080 -Scale ${{ matrix.scale }}
+
+      - name: Store PC screens
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-easy-setup.ps1 -Mode store -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
+
+      - name: Controller screens
+        if: success() || failure()
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\capture-easy-setup.ps1 -Mode control -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\shots" -Tag "$env:TAG"
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: win-shots-${{ matrix.lang }}-${{ matrix.scale }}
+          path: ${{ runner.temp }}/shots
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn
