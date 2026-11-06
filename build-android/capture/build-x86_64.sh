@@ -63,7 +63,7 @@ step_apk() {
   local ks=/tmp/capture-throwaway.p12 pw
   pw="$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' | head -c 40)"
   keytool -genkeypair -keystore "$ks" -storetype PKCS12 -alias capture -keyalg RSA -keysize 2048 -validity 7 \
-    -storepass "$pw" -keypass "$pw" -dname "CN=Emilli Remote screenshot build, not for release" > /dev/null 2>&1
+    -storepass "$pw" -keypass "$pw" -dname "CN=Emilli Remote screenshot build not for release" > /dev/null
   (umask 077; printf 'storeFile=%s\nkeyAlias=capture\nstorePassword=%s\nkeyPassword=%s\n' "$ks" "$pw" "$pw" > android/key.properties)
   unset pw
   trap 'rm -f "$SRC/flutter/android/key.properties" /tmp/capture-throwaway.p12' EXIT
