@@ -1,0 +1,31 @@
+diff --git a/src/common.rs b/src/common.rs
+index 0d46baf..5c0b3a5 100644
+--- a/src/common.rs
++++ b/src/common.rs
+@@ -1159,7 +1159,8 @@ fn get_api_server_(api: String, custom: String) -> String {
+             return format!("http://{}", s);
+         }
+     }
+-    "https://admin.rustdesk.com".to_owned()
++    // Emilli: our account server instead of RustDesk's public one.
++    "https://rd.emillis.net".to_owned()
+ }
+ 
+ #[inline]
+diff --git a/src/flutter_ffi.rs b/src/flutter_ffi.rs
+index f9cc2d6..a7e071d 100644
+--- a/src/flutter_ffi.rs
++++ b/src/flutter_ffi.rs
+@@ -51,6 +51,12 @@ fn initialize(app_dir: &str, custom_client_config: &str) {
+     } else {
+         crate::read_custom_client(custom_client_config);
+     }
++    // Emilli: no direct IP access, so every connection goes through our server's access check.
++    #[cfg(target_os = "android")]
++    config::OVERWRITE_SETTINGS.write().unwrap().insert(
++        keys::OPTION_DIRECT_SERVER.to_owned(),
++        "N".to_owned(),
++    );
+     #[cfg(target_os = "android")]
+     {
+         // flexi_logger can't work when android_logger initialized.

@@ -1,0 +1,46 @@
+Emilli Remote for Android ("Emilli 원격"), branch android-play
+==============================================================
+
+This branch is the complete corresponding source of the Android app
+"Emilli 원격" (package net.emillis.remote) that LoomNaru Labs Inc builds for
+Google Play, version 1.5.0, versionCode 71. It is a modified version of
+RustDesk, the open source remote desktop software by Purslane Tech Pte. Ltd.
+and the RustDesk contributors (https://github.com/rustdesk/rustdesk).
+RustDesk is licensed under the GNU Affero General Public License, version 3
+(AGPL-3.0); see the file LICENCE. This modified version is distributed under
+the same licence, without any warranty.
+
+Base: RustDesk tag 1.5.0, commit fada664df7a294d1d1a9ca3e7cd3637069122f17,
+with libs/hbb_common at commit 229b904508364c8997aad0fb5af57effac859f60
+(https://github.com/rustdesk/hbb_common) included as plain files (the
+first commit of this branch, shared with main).
+
+Changes, each in its own commit after the base:
+
+1. .github/workflows: upstream's workflows are removed (this branch is
+   source only).
+2. libs/hbb_common/src/config.rs: the built-in ID server is rd.emillis.net
+   and the built-in public key is that server's key.
+3. flutter/android/app/build.gradle, AndroidManifest.xml: package
+   net.emillis.remote and the app name "Emilli 원격".
+4. src/common.rs: when no account (API) server is saved, the app uses
+   https://rd.emillis.net; src/flutter_ffi.rs: on Android direct IP access
+   ("direct-server") is always off.
+5. src/common.rs: the app never asks RustDesk's servers for a new version;
+   updates come from Google Play or the administrator.
+6. src/lang/en.rs, src/lang/ko.rs: the input permission notice says what the
+   Accessibility service does, that it reads the focused text field only to
+   type into it, and that nothing it reads is stored or sent.
+7. flutter/android/app/src/main/res: Emilli launcher and notification icons
+   and the icon background colour; flutter/pubspec.yaml: version 1.5.0+71.
+8. build-android/: the build recipe (Docker toolchain, build steps, the same
+   changes as patch files, the icon drawing script). NOTICE and
+   .github/README.md are new.
+
+The Google Play build is made from upstream tag 1.5.0 plus the patch files in
+build-android/patches, which give exactly the tree of this branch outside
+build-android/ and this NOTICE. Everything else is unchanged upstream code.
+
+"RustDesk" is the name of the upstream project. This build is not made,
+endorsed or supported by the RustDesk developers. For the official RustDesk
+apps, use https://rustdesk.com or https://github.com/rustdesk/rustdesk.
