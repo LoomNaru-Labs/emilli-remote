@@ -246,13 +246,23 @@ def main():
         d.shot("permission-notifications")
         d.tap_find("Allow notifications", rid="permission_allow_button")
 
-    # 5. Display over other apps (Android's settings page; the user turns it on and comes back).
-    node = d.find(pkg="com.android.settings", checkable=True, timeout=8)
-    if node:
-        d.shot("permission-display-over-apps")
-        d.tap(node)
-        d.shot("permission-display-over-apps-on")
-        d.back()
+    # 5. Display over other apps: Android opens its list of apps; the user picks the app, turns
+    # the switch on and comes back.
+    if d.find(pkg="com.android.settings", pattern=r"다른 앱 위에 표시|Display over other apps|Appear on top", timeout=8):
+        if not d.find(pkg="com.android.settings", checkable=True, timeout=2):
+            d.shot("permission-display-over-apps-list")
+            d.tap_find("the app in the list", scroll=True, pkg="com.android.settings", pattern=r"^Emilli", timeout=5)
+        sw = d.find(pkg="com.android.settings", checkable=True, timeout=8)
+        if sw:
+            d.shot("permission-display-over-apps")
+            d.tap(sw)
+            d.shot("permission-display-over-apps-on")
+        else:
+            d.skip("no switch on the display over other apps page")
+        for _ in range(3):
+            if PKG in sh("dumpsys window | grep -E 'mCurrentFocus'", check=False):
+                break
+            d.back()
 
     # 6. The app's notice before the service starts.
     if d.find(pattern=r"^(확인|OK)$", pkg=PKG, timeout=10):
