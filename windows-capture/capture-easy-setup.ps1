@@ -131,6 +131,15 @@ public static class Cap {
         IntPtr res; SendMessageTimeout(edit, 0x000C, IntPtr.Zero, text, 0x0002, 5000, out res);
     }
 
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+
+    // Minimizes the runner's own console windows so the full-screen shots show a clean desktop.
+    public static int Minimize(string cls) {
+        int n = 0;
+        foreach (IntPtr h in TopWindows(cls, null)) { ShowWindow(h, 6); n++; }
+        return n;
+    }
+
     public static IntPtr[] TopWindows(string cls, int[] pids) {
         List<IntPtr> list = new List<IntPtr>();
         HashSet<uint> set = new HashSet<uint>();
@@ -138,7 +147,7 @@ public static class Cap {
         EnumWindows(new EnumProc(delegate(IntPtr h, IntPtr l) {
             if (!IsWindowVisible(h)) return true;
             uint pid; GetWindowThreadProcessId(h, out pid);
-            if ((cls == null || ClassOf(h) == cls) && (pids == null || set.Contains(pid))) list.Add(h);
+            if ((string.IsNullOrEmpty(cls) || ClassOf(h) == cls) && (pids == null || set.Contains(pid))) list.Add(h);
             return true;
         }), IntPtr.Zero);
         return list.ToArray();
@@ -188,6 +197,8 @@ function Read-Log {
 }
 
 if (Test-Path $Exe) { Problem 'RustDesk is already installed before Setup' }
+$n = [Cap]::Minimize('CASCADIA_HOSTING_WINDOW_CLASS') + [Cap]::Minimize('ConsoleWindowClass')
+Note "minimized $n console window(s) of the runner"
 $proc = $null
 try {
     # Setup, interactive, in the chosen language.
@@ -207,16 +218,11 @@ try {
     if ([Cap]::IsChecked($pick.Hwnd) -ne 1) { Problem 'the choice did not register as checked' }
     Shot $wiz 'choice-selected'
 
-    # The Next button keeps its window while its caption changes (Next, Install, Finish); on
-    # the first page, in both languages, its caption ends with ">".
+    # The Next button keeps its window while its caption changes (Next, Install, Finish). On the
+    # first page the bottom row is, left to right, Next and Cancel (Back is hidden there).
     $buttons = @([Cap]::Controls($wiz) | Where-Object { $_.Cls -match 'Button' -and $_.Cls -notmatch 'Radio|Check' } | Sort-Object Left)
-    $next = @($buttons | Where-Object { $_.Text.TrimEnd().EndsWith('>') })
-    if ($next.Count -ne 1) {
-        if ($buttons.Count -lt 2) { throw 'Cannot find the Next button' }
-        $next = @($buttons[$buttons.Count - 2])
-        Problem 'Next button found by position (Next, Cancel), not by its caption'
-    }
-    $nextHwnd = $next[0].Hwnd
+    if ($buttons.Count -lt 2) { throw 'Cannot find the Next button' }
+    $nextHwnd = $buttons[$buttons.Count - 2].Hwnd
     [Cap]::Click($nextHwnd)
     Start-Sleep -Seconds 2
 
@@ -236,7 +242,7 @@ try {
     }
 
     # Installing page, then the last page with the ID. Setup's log says when its steps are done.
-    Start-Sleep -Seconds 4
+    Start-Sleep -Milliseconds 1500
     Shot $wiz 'installing'
     if (-not (Wait-For { (Read-Log) -match 'Emilli: step 1' } 30)) {
         Problem 'the installation did not start after Next; saving the page and pressing Next again'
