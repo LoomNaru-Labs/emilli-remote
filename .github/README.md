@@ -23,7 +23,8 @@ history):
   server changes plus a few Android-only ones.
 - On the `easy-windows` branch, [`build-windows-easy.yml`](workflows/build-windows-easy.yml)
   builds "Emilli Remote Setup" from [`windows-easy/`](../windows-easy): a next-next
-  installer around the official, unmodified RustDesk 1.5.0 for Windows that saves
+  installer around our build of RustDesk 1.5.0 for Windows (branch `windows-emilli`:
+  Emilli Remote icon, no update check, "Emilli Remote" as the shown name) that saves
   `rd.emillis.net` as the server (and a password on a store PC), tested on GitHub's
   Windows runners.
 
