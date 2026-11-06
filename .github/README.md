@@ -18,7 +18,11 @@ commit, so `git log` shows them in order.
 - The container mounts this recipe at `/recipe` (read only), the signing key folder
   at `/keystore` (read only, never in this repository) and a work volume at `/work`.
 
-Nothing in this branch runs on GitHub: it has no workflows.
+The Play build never runs on GitHub. The one workflow here,
+`.github/workflows/capture-android.yml`, takes screenshots for the Emilli Remote
+manual: it builds an x86_64 APK of this source for the Android emulator
+(`build-android/capture/`), signed with a throwaway key, keeps it only in its own
+cache and keeps the screenshots for 3 days.
 
 ## Licence
 
