@@ -148,11 +148,17 @@ jobs:
 
       - name: Install the emulator and an Android 14 image
         run: |
+          # Libraries the emulator loads even without a window or sound (missing on ubuntu-24.04).
+          sudo apt-get update -q
+          sudo apt-get install -y -q libpulse0 libnss3 libxcomposite1 libxcursor1 libxi6 libxtst6 libgl1 libegl1 libxkbfile1 > /dev/null
+          sudo apt-get install -y -q libasound2t64 > /dev/null 2>&1 || sudo apt-get install -y -q libasound2 > /dev/null
           sdk="$ANDROID_HOME/cmdline-tools/latest/bin"
           (yes || true) | "$sdk/sdkmanager" --licenses > /dev/null
           "$sdk/sdkmanager" --install emulator platform-tools "$SYSTEM_IMAGE" > /dev/null
           echo no | "$sdk/avdmanager" create avd -n capture -k "$SYSTEM_IMAGE" -d pixel_6 --force
           "$ANDROID_HOME/emulator/emulator" -version | head -n 1
+          missing=$(ldd "$ANDROID_HOME/emulator/qemu/linux-x86_64/qemu-system-x86_64" | grep "not found" || true)
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
 
       - name: Start the emulator
         run: |
