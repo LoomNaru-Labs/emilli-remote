@@ -277,7 +277,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Open System Setting", "시스템 설정 열기"),
         ("How to get Android input permission?", "Android 입력 권한을 얻는 방법은?"),
         ("android_input_permission_tip1", "허락한 기기가 터치, 마우스, 키보드로 이 휴대폰을 조종하려면 Emilli 원격이 Android \"접근성\" 서비스를 써야 합니다. 이 서비스는 내가 시작한 원격 연결 중에만, 그 기기가 보낸 누르기, 밀기, 키 입력과 글자를 대신 실행하는 데 씁니다. 글자 칸에 입력할 때는 이 휴대폰 안에서 그 칸의 글자를 읽습니다. 이 서비스로 읽은 내용은 저장하지도, 누구에게 보내지도 않습니다. 화면 모습은 Android의 별도 화면 공유 허락으로만 공유됩니다."),
-        ("android_input_permission_tip2", "다음 시스템 설정 페이지로 이동하여 [설치된 서비스]를 찾아 들어가서 [RustDesk 입력] 서비스를 켜세요."),
+        ("android_input_permission_tip2", "다음 시스템 설정 페이지에서 [다운로드한 앱] 또는 [설치된 서비스]를 찾아 [Emilli 원격 입력] 서비스를 켜세요."),
         ("android_new_connection_tip", "현재 장치를 제어하려는 새로운 제어 요청이 수신되었습니다."),
         ("android_service_will_start_tip", "\"화면 캡처\"를 켜면 자동으로 서비스가 시작되어 다른 장치가 내 장치에 연결을 요청할 수 있습니다."),
         ("android_stop_service_tip", "서비스를 닫으면 설정된 모든 연결이 자동으로 닫힙니다."),
