@@ -82,7 +82,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Audio Capture", "Audio capture"),
         ("Open System Setting", "Open system setting"),
         ("android_input_permission_tip1", "To let a device you allow control this phone by touch, mouse or keyboard, Emilli Remote needs the Android \"Accessibility\" service. It uses the service only during a remote session you started, to perform the taps, swipes, key presses and text sent by that device; to type into a text field it reads that field on this phone. Nothing it reads through this service is stored or sent to anyone. The screen picture is shared only through Android's separate screen sharing permission."),
-        ("android_input_permission_tip2", "Please go to the next system settings page, find and enter [Installed Services], turn on [RustDesk Input] service."),
+        ("android_input_permission_tip2", "On the next system settings page, find [Downloaded apps] or [Installed services] and turn on the [Emilli 원격 입력] service."),
         ("android_new_connection_tip", "New control request has been received, which wants to control your current device."),
         ("android_service_will_start_tip", "Turning on \"Screen capture\" will automatically start the service, allowing other devices to request a connection to your device."),
         ("android_stop_service_tip", "Closing the service will automatically close all established connections."),
