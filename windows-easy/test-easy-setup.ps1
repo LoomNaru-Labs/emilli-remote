@@ -62,8 +62,13 @@ if ($Mode -eq 'store') {
     $argList += "/PWFILE=$pwFile"
 }
 $watch = [Diagnostics.Stopwatch]::StartNew()
-$proc = Start-Process -FilePath $Setup -ArgumentList $argList -Wait -PassThru
-Check 'Setup exit code 0' ($proc.ExitCode -eq 0) "(exit $($proc.ExitCode), $([int]$watch.Elapsed.TotalSeconds) s)"
+# Wait for Setup itself only: Start-Process -Wait would also wait for the RustDesk tray and
+# service processes that the install leaves running.
+$proc = Start-Process -FilePath $Setup -ArgumentList $argList -PassThru
+$finished = $proc.WaitForExit(600000)
+Check 'Setup finished within 10 minutes' $finished "($([int]$watch.Elapsed.TotalSeconds) s)"
+if (-not $finished) { $proc.Kill(); throw "Setup did not finish" }
+Check 'Setup exit code 0' ($proc.ExitCode -eq 0) "(exit $($proc.ExitCode))"
 if (Test-Path $log) {
     Write-Host "--- Setup log lines from Emilli Remote Setup ---"
     Select-String -Path $log -SimpleMatch 'Emilli:' | ForEach-Object { Write-Host $_.Line }
@@ -107,14 +112,23 @@ if ($Mode -eq 'store') {
 }
 
 # 5. The ID: --get-id, the ID Setup reported, and the ID stored by the service agree.
-$getId = (& $Exe --get-id | Out-String).Trim()
+$getId = if (Test-Path $Exe) { (& $Exe --get-id | Out-String).Trim() } else { '' }
 Check '--get-id prints an ID' ($getId -match '^\d{6,12}$') "('$getId')"
 $setupId = if (Test-Path $idFile) { (Get-Content $idFile -Raw).Trim() } else { '' }
 Check 'Setup reported the same ID' ($setupId -eq $getId) "('$setupId')"
 Check 'service settings hold the same ID' ($m.id -eq $getId) "('$($m.id)', error '$($m.id_error)')"
 
+# Keep RustDesk's own logs (runner user and service profile) for the run's artifact.
+foreach ($pair in @(@('user', $UserRoot), @('service', $SvcRoot))) {
+    $src = Join-Path $pair[1] 'log'
+    if (Test-Path $src) { Copy-Item -Recurse -Force $src (Join-Path $Work "rustdesk-log-$Mode-$($pair[0])") }
+}
+
 # 6. Uninstall with RustDesk's own uninstaller, then remove its settings for a clean next run.
-Start-Process -FilePath $Exe -ArgumentList '--uninstall' -Wait
+if (Test-Path $Exe) {
+    $un = Start-Process -FilePath $Exe -ArgumentList '--uninstall' -PassThru
+    [void]$un.WaitForExit(180000)
+}
 $gone = Wait-Until { -not (Test-Path $Exe) -and $null -eq (Get-Service RustDesk -ErrorAction SilentlyContinue) } 120
 Check 'uninstall removed rustdesk.exe and the service' $gone
 Get-Process rustdesk -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue

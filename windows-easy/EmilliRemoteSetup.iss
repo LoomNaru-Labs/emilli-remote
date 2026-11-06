@@ -166,6 +166,54 @@ begin
     Result := '앞뒤에 빈칸을 넣지 마세요.' + #13#10 + 'No spaces at the start or end.';
 end;
 
+{ True while the RustDesk app that the packer started is still installing. }
+function InstallerStillRunning: Boolean;
+var
+  Locator, Service, Procs: Variant;
+begin
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Procs := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE Name LIKE ''rustdesk%'' ' +
+      'AND CommandLine LIKE ''%--silent-install%''');
+    Result := Procs.Count > 0;
+  except
+    Log('Emilli: cannot list processes: ' + GetExceptionMessage);
+  end;
+end;
+
+function WaitForInstaller(Seconds: Integer): Boolean;
+var
+  I: Integer;
+begin
+  for I := 1 to Seconds do
+  begin
+    if not InstallerStillRunning then
+    begin
+      Log('Emilli: RustDesk installer finished after about ' + IntToStr(I + 1) + ' s');
+      Result := True;
+      Exit;
+    end;
+    Sleep(1000);
+  end;
+  Result := not InstallerStillRunning;
+end;
+
+function WaitForFile(const FileName: String; Seconds: Integer): Boolean;
+var
+  I: Integer;
+begin
+  Result := FileExists(FileName);
+  for I := 1 to Seconds do
+  begin
+    if Result then
+      Exit;
+    Sleep(1000);
+    Result := FileExists(FileName);
+  end;
+end;
+
 function WaitForService(Seconds: Integer): Boolean;
 var
   I: Integer;
@@ -206,12 +254,22 @@ begin
     Fail('The RustDesk installer inside this Setup is damaged (SHA-256 mismatch).');
     Exit;
   end;
-  if not Exec(Src, '--silent-install', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  { The official file is RustDesk's packer (libs/portable): it unpacks the app and starts it
+    with the same arguments without waiting, so wait below for the installed copy and its
+    service. The working folder is not {tmp}, so Setup can still remove {tmp} at the end. }
+  if not Exec(Src, '--silent-install', ExpandConstant('{sys}'), SW_HIDE, ewWaitUntilTerminated,
+    ResultCode) then
   begin
     Fail('RustDesk could not start: ' + SysErrorMessage(ResultCode));
     Exit;
   end;
-  if not FileExists(InstalledExe) then
+  Sleep(2000);
+  if not WaitForInstaller(300) then
+  begin
+    Fail('The RustDesk installer was still running after 5 minutes.');
+    Exit;
+  end;
+  if not WaitForFile(InstalledExe, 30) then
   begin
     Fail('RustDesk was not installed (no ' + InstalledExe + ').');
     Exit;
@@ -220,9 +278,9 @@ begin
 
   { 2. The RustDesk service must answer before settings can be saved in it. }
   SetStatus('RustDesk 서비스 기다리는 중  /  Waiting for the RustDesk service', 2);
-  if not WaitForService(90) then
+  if not WaitForService(120) then
   begin
-    Fail('The RustDesk service did not start within 90 seconds.');
+    Fail('The RustDesk service did not start within 2 minutes.');
     Exit;
   end;
 

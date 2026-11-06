@@ -62,8 +62,11 @@ def decrypt_versioned(value: str, version: str, key: bytes) -> bytes:
 
 
 def load(path: str) -> dict:
-    with open(path, "rb") as f:
-        return tomllib.load(f)
+    try:
+        with open(path, "rb") as f:
+            return tomllib.load(f)
+    except FileNotFoundError:
+        return {}
 
 
 def cmd_options(path: str) -> dict:
