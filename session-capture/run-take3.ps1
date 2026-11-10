@@ -226,7 +226,14 @@ function Rec-End([int] $TailMs = 1200) {
     Mark 'end'
     if ($script:Cur.Helper) { Ask @{ op = 'rec-stop' } 300 | Out-Null }
     Note "store PC recording: $([SL]::RecordStop())"
+    $script:Cur.Stopped = $true
     Save-Rec $script:Cur
+}
+# After a failed step inside a recording: stop and keep it (named -partial).
+function Rec-Abort {
+    if (-not $script:Cur -or $script:Cur.Stopped) { return }
+    $script:Cur.Base = "$($script:Cur.Base)-partial"
+    try { Rec-End 300 } catch { Note "partial recording not saved: $($_.Exception.Message)" }
 }
 function Frame-At([string] $RecDir, [int64] $When) {
     $start = [int64](Get-Content (Join-Path $RecDir 'start.txt'))
@@ -426,7 +433,7 @@ $lnk.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.ex
 $lnk.Arguments = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Dir\bin\printer-check.ps1`" -X 960 -Y 16 -W 940 -H 780 -Log `"$CheckLog`""
 $lnk.WindowStyle = 7
 $lnk.WorkingDirectory = "$Dir\support"
-$lnk.Description = 'Checks the printers of this PC'
+$lnk.Description = 'Printer check'
 $lnk.Save()
 $lnk = $ws.CreateShortcut((Join-Path $desk 'Printers.lnk'))
 $lnk.TargetPath = "$env:SystemRoot\explorer.exe"
@@ -555,6 +562,9 @@ Start-Sleep -Milliseconds 300
 Set-Content -Path $ErrSignal -Value 'go' -Encoding ASCII
 $ErrBox = Wait-Window { $_.Cls -eq '#32770' -and $_.Title -eq $Old -and $_.Proc -eq 'powershell' } 6
 if (-not $ErrBox) { Debug-Shot 'error-box-missing'; throw 'the error message box did not open' }
+# Attempt 1 showed the box opening behind Notepad (its own topmost flag did not take while
+# Notepad held the foreground); it is put in front at once.
+[SL]::Topmost($ErrBox.Hwnd, $true); [SL]::Front($ErrBox.Hwnd)
 Mark 'the red-icon error window: "The document could not be printed."'
 Start-Sleep -Milliseconds 700
 Note "1. error screen: $([SL]::ShotScreen((Join-Path $Out "r3-store-1-problem$Tag-error-screen.png")))"
@@ -612,6 +622,7 @@ Note "'Printer check' icon at $($ic -join ',')"
 Remove-Item -Force $CheckLog, $CheckDone -ErrorAction SilentlyContinue
 State-Query 'item 2, before the check'
 Rec-Begin 'r3-store-2-diagnostic' -Helper
+try {
 Helper-Act ([int](($ic[0] + $ic[2]) / 2)) ([int]($ic[1] + ($ic[3] - $ic[1]) * 0.35)) 'double' 650
 Mark "helper: double-click on 'Printer check'"
 $chk = Wait-Window { $_.Title -eq 'Printer check' -and $_.Proc -eq 'powershell' } 10
@@ -630,18 +641,26 @@ Mark 'the finding shows'
 State-Query 'item 2, at the finding'
 Rec-End 1800
 Note "printer check window: $([SL]::Info($chk.Hwnd)) DPI $([SL]::WindowDpi($chk.Hwnd))"
+} catch {
+    Note "ITEM 2 FAILED: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+    [void]$Missed.Add('item 2: the printer check')
+    Debug-Shot 'item-2-failed'
+    Rec-Abort
+}
 Get-Content -Path $CheckLog -ErrorAction SilentlyContinue | ForEach-Object { Note "check: $_" }
 Copy-Item -Force $CheckLog (Join-Path $Out "r3-store-2-diagnostic$Tag-check.json") -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------- item 3: the fix
 Step 'Item 3: the helper fixes it through the session'
+$isDef = $null; $gqList = [IntPtr]::Zero
+try {
 $pf = Desktop-Icon 'Printers'
 Rec-Begin 'r3-store-3-fix' -Helper
 Helper-Act ([int](($pf[0] + $pf[2]) / 2)) ([int]($pf[1] + ($pf[3] - $pf[1]) * 0.35)) 'double' 550
 Mark "helper: double-click on 'Printers'"
-$folder = Wait-Window { $_.Cls -eq 'CabinetWClass' -and $_.Title -eq 'Printers' } 15
+$folder = Wait-Window { $_.Cls -eq 'CabinetWClass' -and $_.Title -like 'Printers*' } 15
 if (-not $folder) { Debug-Shot 'printers-folder-missing'; [SL]::Windows() | ForEach-Object { Note "window: $_" }; throw 'the Printers window did not open' }
-[SL]::Place($folder.Hwnd, 160, 600, 760, 390)
+[SL]::Place($folder.Hwnd, 160, 470, 780, 520)
 Mark 'the Printers window opens'
 $oi = Wait-Until { Uia-Rect $folder.Hwnd $Old } 8 150
 if (-not $oi) { Debug-Shot 'old-item-missing'; throw "'$Old' not found in the Printers window" }
@@ -700,8 +719,15 @@ if ($isDef) { Mark "'$Printer' is the default printer now" } else { Note "defaul
 $empty = Wait-Until { @(Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue).Count -eq 0 } 6 200
 if ($empty) { Mark "the queue of '$Old' is empty" }
 Rec-End 1400
+} catch {
+    # One item failing does not stop the others: the partial recording is kept for checking.
+    Note "ITEM 3 FAILED: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+    Debug-Shot 'item-3-failed'
+    try { Ask @{ op = 'screen'; dir = $Shots; name = 'helper-item-3-failed' } 20 | Out-Null } catch { }
+    Rec-Abort
+}
 State-Query 'item 3, after the fix'
-if (-not $isDef) { [void]$Missed.Add('item 3 incomplete: default printer not changed'); throw 'the default printer did not change' }
+if (-not $isDef) { [void]$Missed.Add('item 3: the default printer did not change') }
 
 # ---------------------------------------------------------------- item 4: the message
 Step "Item 4: the helper sends a message through the app's chat ($Msg)"
@@ -732,6 +758,9 @@ if (-not $chatOk) { [void]$Missed.Add('item 4: the message did not arrive'); Deb
 
 # ---------------------------------------------------------------- item 5: printing works (staff)
 Step 'Item 5: the staff prints again'
+$through = $null
+if (-not $isDef) { Note 'item 5 skipped: the fix did not make the working printer the default' }
+else { try {
 $sinkBefore = @(Get-Content -Path $SinkLog -ErrorAction SilentlyContinue).Count
 Rec-Begin 'r3-store-5-print' -Helper
 $cm = CM-Window
@@ -760,7 +789,12 @@ State-Query 'item 5, after printing'
 Note "5. working screen: $([SL]::ShotScreen((Join-Path $Out "r3-store-5-print$Tag-working-screen.png")))"
 Ask @{ op = 'shot'; dir = $Shots; name = "r3-store-5-print$Tag-helper-window" } 30 | Out-Null
 Copy-Item -Force (Join-Path $Shots "r3-store-5-print$Tag-helper-window*.png") $Out -ErrorAction SilentlyContinue
-if (-not $through) { [void]$Missed.Add('item 5: the job did not reach the working printer'); throw 'the reprint did not reach the working printer' }
+} catch {
+    Note "ITEM 5 FAILED: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+    Debug-Shot 'item-5-failed'
+    Rec-Abort
+} }
+if (-not $through) { [void]$Missed.Add('item 5: the job did not reach the working printer') }
 
 # ---------------------------------------------------------------- evidence and clean-up
 Step 'Session evidence from the logs (short lines)'

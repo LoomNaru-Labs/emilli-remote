@@ -27,16 +27,43 @@ Note "troubleshooting packs in diagnostics\system: $((Get-ChildItem (Join-Path $
 Note "Get Help app: $((Get-AppxPackage -AllUsers -Name '*GetHelp*' -ErrorAction SilentlyContinue | ForEach-Object PackageFullName) -join ', ')"
 Note "printers: $((Get-Printer | ForEach-Object Name) -join ', ')"
 
-# 1. The legacy printer troubleshooter.
+# 1. The legacy printer troubleshooter, run through to its result against a real stuck job (the
+#    take's problem: a default printer whose port does not answer, a job in error).
+$drv = 'Microsoft Print To PDF'
+try { if (-not (Get-PrinterDriver -Name 'Generic / Text Only' -ErrorAction SilentlyContinue)) { Add-PrinterDriver -Name 'Generic / Text Only' }; $drv = 'Generic / Text Only' } catch { }
+Add-PrinterPort -Name 'ProbeDeadPort' -PrinterHostAddress '127.0.0.1' -PortNumber 9
+Add-Printer -Name 'Old Receipt Printer' -DriverName $drv -PortName 'ProbeDeadPort'
+Set-ItemProperty 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows' -Name LegacyDefaultPrinterMode -Value 1 -Type DWord
+Get-CimInstance Win32_Printer -Filter "Name='Old Receipt Printer'" | Invoke-CimMethod -MethodName SetDefaultPrinter | Out-Null
+'Receipt 0412' | Out-Printer -Name 'Old Receipt Printer'
+$end = (Get-Date).AddSeconds(60)
+while ((Get-Date) -lt $end -and -not ("$((Get-PrintJob -PrinterName 'Old Receipt Printer' -ErrorAction SilentlyContinue | Select-Object -First 1).JobStatus)" -match 'Error')) { Start-Sleep -Seconds 2 }
+Note "stuck job: $(@(Get-PrintJob -PrinterName 'Old Receipt Printer' | ForEach-Object { "'$($_.DocumentName)' $($_.JobStatus)" }) -join ', ')"
 if (Test-Path $msdt) {
     $p = Start-Process -FilePath $msdt -ArgumentList '-id PrinterDiagnostic' -PassThru
-    for ($i = 1; $i -le 6; $i++) {
-        Start-Sleep -Seconds 3
-        Windows-Now "msdt +$(3 * $i) s"
-        [SL]::ShotScreen((Join-Path $Out ("msdt-{0:D2}.png" -f (3 * $i)))) | Out-Null
+    $A = [System.Windows.Automation.AutomationElement]
+    for ($i = 1; $i -le 12; $i++) {
+        Start-Sleep -Seconds 6
+        $w = [SL]::Windows() | Where-Object { $_.Proc -eq 'msdt' -and $_.Width -gt 200 } | Select-Object -First 1
+        [SL]::ShotScreen((Join-Path $Out ("msdt-page-{0:D2}.png" -f $i))) | Out-Null
+        if (-not $w) { Note "page $i`: no troubleshooter window"; break }
+        Note "page $i`: $w; texts: $(Uia-Texts $w.Hwnd)"
+        # A list of printers: choose ours.
+        try {
+            $item = $A::FromHandle($w.Hwnd).FindFirst([System.Windows.Automation.TreeScope]::Descendants,
+                (New-Object System.Windows.Automation.PropertyCondition($A::NameProperty, 'Old Receipt Printer')))
+            if ($item) {
+                $pat = $null
+                if ($item.TryGetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern, [ref]$pat)) { $pat.Select(); Note "  chose 'Old Receipt Printer'" }
+            }
+        } catch { Note "  choice: $($_.Exception.Message)" }
+        Start-Sleep -Milliseconds 500
+        $n = [SL]::ClickButton($w.Hwnd, 'Next')
+        if ($n -eq 0) { $n = [SL]::ClickButton($w.Hwnd, 'Close') ; if ($n -gt 0) { Note '  Close'; break } }
+        else { Note '  Next' }
     }
-    foreach ($w in [SL]::Windows()) { if ($w.Proc -in @('msdt', 'sdiagnhost')) { Note "troubleshooter texts: $(Uia-Texts $w.Hwnd)" } }
     Get-Process msdt, sdiagnhost -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+    Note "after the troubleshooter: $(@(Get-PrintJob -PrinterName 'Old Receipt Printer' -ErrorAction SilentlyContinue | ForEach-Object { "'$($_.DocumentName)' $($_.JobStatus)" }) -join ', '); Spooler $((Get-Service Spooler).Status)"
 }
 # 2. The Settings route (Troubleshoot, Printer) and Get Help.
 Start-Process 'ms-settings:troubleshoot' -ErrorAction SilentlyContinue
