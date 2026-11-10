@@ -608,7 +608,9 @@ function Save-Crop([string] $From, [string] $To, [int] $X, [int] $Y, [int] $W, [
         $part.Save($To, [System.Drawing.Imaging.ImageFormat]::Png); $part.Dispose()
     } finally { $bmp.Dispose() }
 }
-$tShown = ($Marks | Where-Object { $_[1] -like 'store PC desktop shown*' } | Select-Object -First 1)[0] + 700
+# 300 ms after the desktop shows: the pointer still rests above the error window's text (at
+# 700 ms it is already on its way to OK, over the text).
+$tShown = ($Marks | Where-Object { $_[1] -like 'store PC desktop shown*' } | Select-Object -First 1)[0] + 300
 $tEnd = $Marks[$Marks.Count - 1][0] - 300
 Step 'Stills from the recorded take (the same frames as the videos)'
 $f = Frame-At $recHelper $tShown; Copy-Item $f (Join-Path $Shots "$base-01-controller-problem$Tag.png")
@@ -656,6 +658,18 @@ foreach ($rec in @(@($recHelper, "$base-05-take-controller$Tag"), @($recStore, "
 }
 Set-Content -Path (Join-Path $Shots "$base-05-take-steps$Tag.txt") -Value $steps -Encoding ASCII
 $steps | ForEach-Object { Note $_ }
+# For checking the videos without playing them: both recordings' frame at every step, and
+# 250 ms after it.
+$mkDir = Join-Path $Debug 'step-frames'
+New-Item -ItemType Directory -Force -Path $mkDir | Out-Null
+$k = 0
+foreach ($mk in $Marks) {
+    $k++
+    foreach ($off in @(0, 250)) {
+        Copy-Item -Force (Frame-At $recHelper ($mk[0] + $off)) (Join-Path $mkDir ('{0:D2}-{1}-controller.png' -f $k, $off)) -ErrorAction SilentlyContinue
+        Copy-Item -Force (Frame-At $recStore ($mk[0] + $off)) (Join-Path $mkDir ('{0:D2}-{1}-controlled.png' -f $k, $off)) -ErrorAction SilentlyContinue
+    }
+}
 
 # Extra: the store PC's connection panel opened from its taskbar button, while still connected.
 Step 'Extra: the connection panel on the store PC, opened from its taskbar button'
