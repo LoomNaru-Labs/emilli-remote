@@ -42,7 +42,7 @@ jobs:
         # printer faults Windows itself shows as an error.
         include:
           - { set: office, lang: en }
-          - { set: probe, lang: en }
+          - { set: store, lang: en }
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4

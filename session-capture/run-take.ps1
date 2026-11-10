@@ -281,11 +281,12 @@ Add-PrinterPort -Name $P.Port -PrinterHostAddress '127.0.0.1' -PortNumber 9100
 Add-Printer -Name $P.Printer -DriverName $driver -PortName $P.Port
 Set-Printer -Name $P.Printer -KeepPrintedJobs $true
 
-# The old printer, still the default, so the document went there: its port is a file in a folder
-# that does not exist, so Windows cannot deliver the job.
+# The old printer, still the default, so the document went there: its port points at an address
+# where nothing answers, so Windows retries and after about 20 s reports the job as an error
+# (probe run 42792253200: 'Error, Printing' on the job, 'Error' on the printer).
 $Old = "Old $($P.Printer)"
-$oldPort = "C:\Old$($P.Printer -replace ' ', '')\print.prn"
-Add-PrinterPort -Name $oldPort
+$oldPort = "Old$($P.Port)"
+Add-PrinterPort -Name $oldPort -PrinterHostAddress '127.0.0.1' -PortNumber 9
 Add-Printer -Name $Old -DriverName $driver -PortName $oldPort
 Get-CimInstance Win32_Printer -Filter "Name='$Old'" | Invoke-CimMethod -MethodName SetDefaultPrinter | Out-Null
 Note "printers: '$($P.Printer)' on $($P.Port) (stand-in printer), '$Old' on $oldPort (default), driver '$driver'"
@@ -305,18 +306,11 @@ function Print-Doc([string] $Printer) {
     $pd.Print()
 }
 Print-Doc $Old
-$errJob = Wait-Until { $j = Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue; if ($j -and ("$($j[0].JobStatus)" -match 'Error')) { $j } } 25
+$errJob = Wait-Until { $j = Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue; if ($j -and ("$($j[0].JobStatus)" -match 'Error')) { $j } } 90 2000
 if (-not $errJob) {
+    # Not seen in the probe; the job is then paused instead, which the brief also allows.
     $j = Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue
-    Note "old printer on the file port: $(if ($j) { "job status '$($j[0].JobStatus)'" } else { 'no job left' })"
-    if (-not $j) {
-        Add-PrinterPort -Name "Old$($P.Port)" -PrinterHostAddress '127.0.0.1' -PortNumber 9
-        Set-Printer -Name $Old -PortName "Old$($P.Port)"
-        Print-Doc $Old
-        Start-Sleep -Seconds 10
-    }
-    $j = Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue
-    if ($j -and "$($j[0].JobStatus)" -notmatch 'Error') { Suspend-PrintJob -PrinterName $Old -ID $j[0].Id; Start-Sleep -Seconds 2 }
+    if ($j) { Suspend-PrintJob -PrinterName $Old -ID $j[0].Id; Start-Sleep -Seconds 2 }
 }
 $j = Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue
 if (-not $j) { throw 'no stuck job on the old printer' }
@@ -343,8 +337,11 @@ Start-Sleep -Seconds 2
 [SL]::Place($Explorer.Hwnd, 40, 610, 760, 390)
 [SL]::Place($Notepad.Hwnd, 40, 60, 760, 520)
 [SL]::Place($Queue.Hwnd, 1000, 700, 900, 320)
-# The old printer's queue in front of the document, over a third of the screen.
+# The old printer's queue in front of the document, over a third of the screen, its Status column
+# wide enough for Windows' whole 'Error - Printing'.
 [SL]::Place($OldQueue.Hwnd, 560, 90, 1300, 560)
+$oqList = [SL]::ChildHandle($OldQueue.Hwnd, 'SysListView32')
+if ($oqList -ne [IntPtr]::Zero) { [SL]::SetColumnWidth($oqList, 0, 260); [SL]::SetColumnWidth($oqList, 1, 230) }
 foreach ($w in [SL]::Windows()) {
     if ($w.Cls -in @('ConsoleWindowClass', 'CASCADIA_HOSTING_WINDOW_CLASS') -and [SL]::SessionOf($w.Pid) -eq [SL]::MySession()) {
         [SL]::Show($w.Hwnd, 6); [SL]::HideFromTaskbar($w.Hwnd); Note "runner window hidden: $w"

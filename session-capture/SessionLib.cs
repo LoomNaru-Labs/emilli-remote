@@ -454,6 +454,9 @@ public static class SL {
 
     public static void PostClose(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
 
+    // LVM_SETCOLUMNWIDTH: plain numbers, so it works on another process's list view.
+    public static void SetColumnWidth(IntPtr lv, int col, int width) { SendMessage(lv, 0x101E, new IntPtr(col), new IntPtr(width)); }
+
     public static string ChildTexts(IntPtr parent) {
         StringBuilder sb = new StringBuilder();
         EnumChildWindows(parent, new EnumProc(delegate(IntPtr h, IntPtr l) {
