@@ -40,7 +40,7 @@ $SvcRoot = 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk'
 $HelperUser = 'Helper'
 $Wall = @(38, 84, 124)
 $Peer = '127.0.0.1'
-$Fps = 20
+$Fps = 15
 
 $Props = @{
     office = @{
@@ -133,14 +133,14 @@ function Helper-Point([int] $X, [int] $Y, [int] $Ms = 900) {
     Ask @{ op = 'move'; rx = $X; ry = $Y; ms = $Ms } 30 | Out-Null
 }
 function Helper-Click([switch] $Right) {
-    Ask @{ op = 'click'; right = [bool]$Right; pause = 300 } 10 | Out-Null
+    Ask @{ op = 'click'; right = [bool]$Right; pause = 180 } 10 | Out-Null
 }
 function Now-Ms { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 
 # ---------------------------------------------------------------- 1. Emilli Remote as a store PC
 Step 'Install Emilli Remote Setup as a store PC (silent, throwaway password)'
 $pwFile = Join-Path $Dir 'secret\pw.txt'
-[System.IO.File]::WriteAllText($pwFile, (New-Secret 20))
+[System.IO.File]::WriteAllText($pwFile, (New-Secret 10))
 $setupLog = Join-Path $Debug 'setup.log'
 $proc = Start-Process -FilePath $Setup -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MODE=store', "/PWFILE=$pwFile", "/LOG=$setupLog")
 if (-not $proc.WaitForExit(600000)) { throw 'Setup did not finish in 10 minutes' }
@@ -390,18 +390,18 @@ $Marks = New-Object System.Collections.ArrayList
 function Mark([string] $Label) { [void]$Marks.Add(@((Now-Ms), $Label)); Note "mark: $Label" }
 [SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
 Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps; x = $Region[0]; y = $Region[1]; w = $Region[2]; h = $Region[3] } 20 | Out-Null
-Start-Sleep -Milliseconds 1500
+Start-Sleep -Milliseconds 1200
 Mark 'the helper main window, idle'
-Ask @{ op = 'click-at'; what = 'field'; ms = 700 } 20 | Out-Null
+Ask @{ op = 'click-at'; what = 'field'; ms = 600 } 20 | Out-Null
 Mark 'address field clicked'
-Ask @{ op = 'type'; text = $Peer; ms = 90 } 20 | Out-Null
+Ask @{ op = 'type'; text = $Peer; ms = 80 } 20 | Out-Null
 Mark "address typed ($Peer)"
-Ask @{ op = 'click-at'; what = 'connect'; ms = 600 } 20 | Out-Null
+Ask @{ op = 'click-at'; what = 'connect'; ms = 500 } 20 | Out-Null
 Mark 'Connect clicked'
 Ask @{ op = 'wait-remote'; peer = $Peer; seconds = 20 } 30 | Out-Null
 Mark 'session window open (password prompt)'
 Ask @{ op = 'park'; vx = $Region[0]; vy = $Region[1]; vw = $Region[2]; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 10 | Out-Null
-Start-Sleep -Milliseconds 900
+Start-Sleep -Milliseconds 500
 Ask @{ op = 'type-secret'; ms = 70 } 20 | Out-Null
 Mark 'password given'
 # Accepted = the store PC's desktop fills the session window: wallpaper colour across the whole
@@ -429,38 +429,38 @@ $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
 $CropX = if ($m.Success) { [int]$m.Groups[1].Value - $Region[0] } else { 1 }
 $CropY = if ($m.Success) { [int]$m.Groups[2].Value - $Region[1] } else { 31 }
-Start-Sleep -Milliseconds 900
+Start-Sleep -Milliseconds 400
 
 # Navigation 1: the stuck job on the old printer.
 $lv = [SL]::ChildRect($OldQueue.Hwnd, 'SysListView32')
 $hd = [SL]::ChildRect($OldQueue.Hwnd, 'SysHeader32')
-Helper-Point ($lv[0] + 90) ($hd[3] + 11) 900
+Helper-Point ($lv[0] + 90) ($hd[3] + 11) 700
 Helper-Click -Right
 Mark 'right-click on the stuck job'
 $menuTexts = ''
 $mi = Wait-Until { [SL]::MenuItemRect('Cancel', [ref]$menuTexts) } 6 150
 if (-not $mi) { Debug-Shot 'menu-missing'; throw 'the job menu did not open on the store PC' }
-Helper-Point ($mi[0] + 30) ([int](($mi[1] + $mi[3]) / 2)) 550
+Helper-Point ($mi[0] + 30) ([int](($mi[1] + $mi[3]) / 2)) 450
 Helper-Click
 Mark 'Cancel chosen'
 $dlgText = ''
 $yes = Wait-Until { [SL]::DialogButtonRect('Yes', [ref]$dlgText) } 6 150
 if (-not $yes) { Debug-Shot 'confirm-missing'; throw 'the confirmation did not appear on the store PC' }
-Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 650
+Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 550
 Helper-Click
 Mark 'Yes: the stuck job is cancelled'
 
 # Navigation 2: print the document again, to the printer that works.
 $fm = [SL]::MenuBarItemRect($Notepad.Hwnd, 'File')
 if (-not $fm) { throw "Notepad's File menu was not found" }
-Helper-Point ([int](($fm[0] + $fm[2]) / 2)) ([int](($fm[1] + $fm[3]) / 2)) 900
+Helper-Point ([int](($fm[0] + $fm[2]) / 2)) ([int](($fm[1] + $fm[3]) / 2)) 700
 Helper-Click
 Mark 'Notepad: File menu'
 $printTexts = ''
 $pi = Wait-Until { [SL]::MenuItemRect('Print', [ref]$printTexts) } 6 150
 Note "File menu: $printTexts"
 if (-not $pi) { Debug-Shot 'file-menu-missing'; throw 'the File menu did not open' }
-Helper-Point ($pi[0] + 40) ([int](($pi[1] + $pi[3]) / 2)) 500
+Helper-Point ($pi[0] + 40) ([int](($pi[1] + $pi[3]) / 2)) 450
 Helper-Click
 Mark 'Print... chosen'
 $dlg = Wait-Until { [SL]::Windows() | Where-Object { $_.Cls -eq '#32770' -and $_.Title -eq 'Print' } | Select-Object -First 1 } 8 150
@@ -480,20 +480,32 @@ if (-not $target) {
     if ($el) { $rr = $el.Current.BoundingRectangle; $target = @([int]$rr.Left, [int]$rr.Top, [int]$rr.Right, [int]$rr.Bottom); Note 'printer found through UI Automation' }
 }
 if (-not $target) { Debug-Shot 'printer-item-missing'; throw "'$($P.Printer)' not found in the Print dialog" }
-Helper-Point ([int](($target[0] + $target[2]) / 2)) ([int](($target[1] + $target[3]) / 2)) 800
+Note "Print dialog $([SL]::Info($dlg.Hwnd)); target row at $($target -join ',')"
+Helper-Point ([int](($target[0] + $target[2]) / 2)) ([int](($target[1] + $target[3]) / 2)) 600
 Helper-Click
+Start-Sleep -Milliseconds 300
+if ($plv -ne [IntPtr]::Zero) {
+    $selRow = [SL]::ListViewSelected($plv)
+    $selName = if ($selRow -ge 0 -and $selRow -lt $rows.Count) { $rows[$selRow].Split('|')[0] } else { '(none)' }
+    Note "selected in the Print dialog: '$selName'"
+    if ($selName -ne $P.Printer) { Debug-Shot 'wrong-printer'; throw "the Print dialog has '$selName' selected, not '$($P.Printer)'" }
+}
 Mark "'$($P.Printer)' selected"
 $pbText = ''
 $pb = [SL]::DialogButtonRect('Print', [ref]$pbText)
 if (-not $pb) { Debug-Shot 'print-button-missing'; throw 'no Print button' }
-Helper-Point ([int](($pb[0] + $pb[2]) / 2)) ([int](($pb[1] + $pb[3]) / 2)) 650
+$sinkLog = Join-Path $Dir 'out\sink.log'
+$sinkBefore = @(Get-Content -Path $sinkLog -ErrorAction SilentlyContinue).Count
+Helper-Point ([int](($pb[0] + $pb[2]) / 2)) ([int](($pb[1] + $pb[3]) / 2)) 550
 Helper-Click
 Mark 'Print clicked'
-$printed = Wait-Until { $jp = Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue; if ($jp -and ("$($jp[0].JobStatus)" -match 'Printed')) { $jp } } 30 300
+# Through = the stand-in printer received the job (its own log), whatever the queue then shows.
+$through = Wait-Until { @(Get-Content -Path $sinkLog -ErrorAction SilentlyContinue).Count -gt $sinkBefore } 15 250
+$jobsNow = @(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue | ForEach-Object { "'$($_.DocumentName)' $($_.JobStatus)" }) -join ', '
 $oldLeft = @(Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue).Count
-Note "working printer: $(if ($printed) { "'$($printed[0].DocumentName)' status '$($printed[0].JobStatus)'" } else { 'no printed job' }); old printer: $oldLeft job(s)"
-if (-not $printed) { Debug-Shot 'not-printed'; throw 'the document did not print on the working printer' }
-Mark "printed: '$($P.Doc)' shows Printed on '$($P.Printer)', the old queue is empty"
+Note "stand-in printer: $(@(Get-Content -Path $sinkLog -ErrorAction SilentlyContinue) -join ' / '); '$($P.Printer)' queue: $jobsNow; old printer: $oldLeft job(s)"
+if (-not $through) { Debug-Shot 'not-printed'; throw 'the document did not reach the working printer' }
+Mark "printed: the job went through to '$($P.Printer)'"
 Start-Sleep -Milliseconds 1200
 Mark 'end'
 
@@ -595,6 +607,7 @@ Start-Sleep -Seconds 2
 Note "D. working screen: $([SL]::ShotScreen((Join-Path $Shots "$base-04-working$Tag.png")))"
 Note "after the session: '$($P.Printer)' $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue | ForEach-Object { "'$($_.DocumentName)' $($_.JobStatus)" }) -join ', '); '$Old' $(@(Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue).Count) job(s)"
 Copy-Item -Force "$Shots\*.txt" $Out -ErrorAction SilentlyContinue
+Copy-Item -Force (Join-Path $Dir 'out\sink.log') $Debug -ErrorAction SilentlyContinue
 
 # ---------------------------------------------------------------- 7. evidence and clean-up
 Step 'Session evidence from the logs (short lines)'

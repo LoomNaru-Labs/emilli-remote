@@ -461,6 +461,9 @@ public static class SL {
 
     public static void PostClose(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
 
+    // LVM_GETNEXTITEM with LVNI_SELECTED: the selected row, -1 when none.
+    public static int ListViewSelected(IntPtr lv) { return (int)SendMessage(lv, 0x100C, new IntPtr(-1), new IntPtr(2)); }
+
     // LVM_SETCOLUMNWIDTH: plain numbers, so it works on another process's list view.
     public static void SetColumnWidth(IntPtr lv, int col, int width) { SendMessage(lv, 0x101E, new IntPtr(col), new IntPtr(width)); }
 
@@ -478,7 +481,10 @@ public static class SL {
     static Thread recThread;
     static volatile bool recStop;
     static int recFrames, recLate;
-    public static void RecordStart(int x, int y, int w, int h, int fps, string dir) {
+    public static void RecordStart(int x, int y, int w, int h, int fps, string dir) { RecordStart(x, y, w, h, fps, dir, 40); }
+
+    // maxSeconds: the frames are held in memory, so a recording stops by itself after this long.
+    public static void RecordStart(int x, int y, int w, int h, int fps, string dir, int maxSeconds) {
         recStop = false; recFrames = 0; recLate = 0;
         System.IO.Directory.CreateDirectory(dir);
         // Wall-clock start (Unix ms) so marks taken in another process map onto frames.csv.
@@ -493,7 +499,7 @@ public static class SL {
             Stopwatch sw = Stopwatch.StartNew();
             double step = 1000.0 / fps;
             int i = 0;
-            while (!recStop) {
+            while (!recStop && sw.Elapsed.TotalSeconds < maxSeconds) {
                 double due = i * step;
                 double now = sw.Elapsed.TotalMilliseconds;
                 if (now < due) { Thread.Sleep((int)Math.Max(1, due - now)); continue; }
