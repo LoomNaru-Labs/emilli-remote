@@ -1,0 +1,321 @@
+// Helpers for the connected-session screenshots (session-capture/*.ps1), loaded with Add-Type
+// by Windows PowerShell 5.1, so C# 5 only. Every call works in physical pixels.
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+using System.Text;
+using System.Threading;
+
+public class Win {
+    public IntPtr Hwnd; public string Cls; public string Title; public uint Pid; public string Proc;
+    public int Left, Top, Width, Height; public bool Visible; public bool Iconic;
+    public override string ToString() {
+        return string.Format("0x{0:X} pid {1} {2} class '{3}' title '{4}' at {5},{6} size {7}x{8}{9}",
+            Hwnd.ToInt64(), Pid, Proc, Cls, Title, Left, Top, Width, Height, Iconic ? " minimized" : "");
+    }
+}
+
+public static class SL {
+    [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+    [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+    public delegate bool EnumProc(IntPtr h, IntPtr l);
+
+    [DllImport("user32.dll")] static extern IntPtr SetThreadDpiAwarenessContext(IntPtr c);
+    [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr h, out RECT r);
+    [DllImport("dwmapi.dll")] static extern int DwmGetWindowAttribute(IntPtr h, int a, out RECT r, int s);
+    [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern bool BringWindowToTop(IntPtr h);
+    [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint f);
+    [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr h, int cmd);
+    [DllImport("user32.dll")] static extern bool IsIconic(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetSystemMetrics(int i);
+    [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p, IntPtr l);
+    [DllImport("user32.dll")] static extern bool EnumChildWindows(IntPtr parent, EnumProc p, IntPtr l);
+    [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetClassName(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetWindowText(IntPtr h, StringBuilder s, int n);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+    [DllImport("user32.dll")] static extern bool GetCursorPos(out POINT p);
+    [DllImport("user32.dll")] static extern uint SendInput(uint n, INPUT[] inputs, int size);
+    [DllImport("user32.dll")] static extern void keybd_event(byte vk, byte scan, uint flags, UIntPtr extra);
+    [DllImport("user32.dll")] static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr h);
+    [DllImport("user32.dll")] static extern int GetDlgCtrlID(IntPtr h);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern bool SystemParametersInfo(uint a, uint b, string c, uint f);
+    [DllImport("user32.dll")] static extern bool SetSysColors(int n, int[] el, int[] rgb);
+    [DllImport("kernel32.dll")] static extern bool ProcessIdToSessionId(uint pid, out uint sid);
+
+    [StructLayout(LayoutKind.Sequential)] struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr extra; }
+    [StructLayout(LayoutKind.Sequential)] struct KEYBDINPUT { public ushort vk, scan; public uint flags, time; public IntPtr extra; }
+    [StructLayout(LayoutKind.Explicit)] struct INPUTU { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+    [StructLayout(LayoutKind.Sequential)] struct INPUT { public uint type; public INPUTU u; }
+
+    public static void Aware() { SetThreadDpiAwarenessContext(new IntPtr(-4)); }
+
+    public static uint SessionOf(uint pid) { uint s; return ProcessIdToSessionId(pid, out s) ? s : 0xFFFFFFFF; }
+    public static uint MySession() { return SessionOf((uint)Process.GetCurrentProcess().Id); }
+
+    public static int[] Screen() {
+        Aware();
+        return new int[] { GetSystemMetrics(76), GetSystemMetrics(77), GetSystemMetrics(78), GetSystemMetrics(79) };
+    }
+
+    static string ClassOf(IntPtr h) { StringBuilder s = new StringBuilder(256); GetClassName(h, s, 256); return s.ToString(); }
+    static string TitleOf(IntPtr h) { StringBuilder s = new StringBuilder(512); GetWindowText(h, s, 512); return s.ToString(); }
+
+    public static RECT Frame(IntPtr h) {
+        Aware();
+        RECT r;
+        if (DwmGetWindowAttribute(h, 9, out r, Marshal.SizeOf(typeof(RECT))) != 0) GetWindowRect(h, out r);
+        return r;
+    }
+
+    static Win Describe(IntPtr h) {
+        Win w = new Win(); w.Hwnd = h; w.Cls = ClassOf(h); w.Title = TitleOf(h);
+        uint pid; GetWindowThreadProcessId(h, out pid); w.Pid = pid;
+        try { w.Proc = Process.GetProcessById((int)pid).ProcessName; } catch { w.Proc = "?"; }
+        RECT r = Frame(h); w.Left = r.Left; w.Top = r.Top; w.Width = r.Right - r.Left; w.Height = r.Bottom - r.Top;
+        w.Visible = IsWindowVisible(h); w.Iconic = IsIconic(h);
+        return w;
+    }
+
+    // Visible top-level windows of this desktop, front to back.
+    public static Win[] Windows() {
+        Aware();
+        List<Win> list = new List<Win>();
+        EnumWindows(new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (IsWindowVisible(h)) list.Add(Describe(h));
+            return true;
+        }), IntPtr.Zero);
+        return list.ToArray();
+    }
+
+    public static Win Info(IntPtr h) { Aware(); return Describe(h); }
+
+    public static void Place(IntPtr h, int x, int y, int w, int hh) {
+        Aware();
+        ShowWindow(h, 9);
+        SetWindowPos(h, IntPtr.Zero, x, y, w, hh, 0x0014);
+    }
+
+    public static void Show(IntPtr h, int cmd) { ShowWindow(h, cmd); }
+
+    // Foreground from a background process: a tap of Alt lifts the foreground lock.
+    public static void Front(IntPtr h) {
+        Aware();
+        if (IsIconic(h)) ShowWindow(h, 9);
+        keybd_event(0x12, 0, 0, UIntPtr.Zero);
+        keybd_event(0x12, 0, 2, UIntPtr.Zero);
+        BringWindowToTop(h);
+        SetForegroundWindow(h);
+    }
+
+    public static void Topmost(IntPtr h, bool on) {
+        SetWindowPos(h, new IntPtr(on ? -1 : -2), 0, 0, 0, 0, 0x0013);
+    }
+
+    // Removes the window's taskbar button (ITaskbarList::DeleteTab); the window stays open.
+    [ComImport, Guid("56FDF342-FD6D-11d0-958A-006097C9A090"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    interface ITaskbarList {
+        void HrInit(); void AddTab(IntPtr h); void DeleteTab(IntPtr h); void ActivateTab(IntPtr h); void SetActiveAlt(IntPtr h);
+    }
+    [ComImport, Guid("56FDF344-FD6D-11d0-958A-006097C9A090")] class TaskbarList { }
+    public static void HideFromTaskbar(IntPtr h) {
+        ITaskbarList t = (ITaskbarList)new TaskbarList(); t.HrInit(); t.DeleteTab(h);
+    }
+
+    [StructLayout(LayoutKind.Sequential)] struct CURSORINFO { public int cbSize, flags; public IntPtr hCursor; public POINT pt; }
+    [StructLayout(LayoutKind.Sequential)] struct ICONINFO { public bool fIcon; public int xHotspot, yHotspot; public IntPtr hbmMask, hbmColor; }
+    [DllImport("user32.dll")] static extern bool GetCursorInfo(ref CURSORINFO ci);
+    [DllImport("user32.dll")] static extern bool GetIconInfo(IntPtr h, out ICONINFO ii);
+    [DllImport("user32.dll")] static extern bool DrawIconEx(IntPtr hdc, int x, int y, IntPtr icon, int w, int h, int step, IntPtr brush, int flags);
+    [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr h);
+
+    // Screen grabs include the mouse pointer where the screen shows it, as screen recorders do
+    // (a plain screen copy leaves the pointer out).
+    public static bool WithCursor = true;
+
+    public static Bitmap Grab(int x, int y, int w, int h) {
+        Aware();
+        Bitmap b = new Bitmap(w, h, PixelFormat.Format24bppRgb);
+        using (Graphics g = Graphics.FromImage(b)) {
+            g.CopyFromScreen(x, y, 0, 0, new Size(w, h));
+            if (WithCursor) {
+                CURSORINFO ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
+                if (GetCursorInfo(ref ci) && (ci.flags & 1) != 0 && ci.hCursor != IntPtr.Zero) {
+                    ICONINFO ii;
+                    if (GetIconInfo(ci.hCursor, out ii)) {
+                        IntPtr hdc = g.GetHdc();
+                        DrawIconEx(hdc, ci.pt.X - ii.xHotspot - x, ci.pt.Y - ii.yHotspot - y, ci.hCursor, 0, 0, 0, IntPtr.Zero, 3);
+                        g.ReleaseHdc(hdc);
+                        if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
+                        if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
+                    }
+                }
+            }
+        }
+        return b;
+    }
+
+    public static string ShotScreen(string path) {
+        int[] s = Screen();
+        using (Bitmap b = Grab(s[0], s[1], s[2], s[3])) b.Save(path, ImageFormat.Png);
+        return s[2] + "x" + s[3];
+    }
+
+    // The window's visible frame (no shadow), clipped to the screen.
+    public static int[] Clip(IntPtr h) {
+        int[] s = Screen();
+        RECT r = Frame(h);
+        int left = Math.Max(r.Left, s[0]), top = Math.Max(r.Top, s[1]);
+        int right = Math.Min(r.Right, s[0] + s[2]), bottom = Math.Min(r.Bottom, s[1] + s[3]);
+        return new int[] { left, top, right - left, bottom - top };
+    }
+
+    public static string ShotWindow(IntPtr h, string path) {
+        int[] c = Clip(h);
+        if (c[2] <= 0 || c[3] <= 0) return "window not on screen";
+        using (Bitmap b = Grab(c[0], c[1], c[2], c[3])) b.Save(path, ImageFormat.Png);
+        return c[2] + "x" + c[3] + " at " + c[0] + "," + c[1];
+    }
+
+    // Saves the window and, from the same grab, the region x,y,w,h given in screen pixels.
+    public static string ShotWindowAndRegion(IntPtr h, string windowPath, int x, int y, int w, int hh, string regionPath) {
+        int[] c = Clip(h);
+        if (c[2] <= 0 || c[3] <= 0) return "window not on screen";
+        using (Bitmap b = Grab(c[0], c[1], c[2], c[3])) {
+            b.Save(windowPath, ImageFormat.Png);
+            Rectangle r = new Rectangle(x - c[0], y - c[1], w, hh);
+            r.Intersect(new Rectangle(0, 0, c[2], c[3]));
+            if (r.Width > 0 && r.Height > 0)
+                using (Bitmap part = b.Clone(r, PixelFormat.Format24bppRgb)) part.Save(regionPath, ImageFormat.Png);
+            return c[2] + "x" + c[3] + " at " + c[0] + "," + c[1] + "; region " + r.Width + "x" + r.Height + " at +" + r.X + ",+" + r.Y;
+        }
+    }
+
+    // Bounding box (screen pixels) of the pixels within tol of the colour, inside the region.
+    // Returns left, top, right, bottom, count; count 0 when nothing matched.
+    public static int[] ColorBox(int x, int y, int w, int h, int red, int green, int blue, int tol) {
+        bool keep = WithCursor; WithCursor = false;
+        Bitmap grabbed = Grab(x, y, w, h);
+        WithCursor = keep;
+        using (Bitmap b = grabbed) {
+            BitmapData d = b.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            byte[] px = new byte[d.Stride * h];
+            Marshal.Copy(d.Scan0, px, 0, px.Length);
+            b.UnlockBits(d);
+            int l = int.MaxValue, t = int.MaxValue, r = -1, bo = -1, n = 0;
+            for (int j = 0; j < h; j++) {
+                int row = j * d.Stride;
+                for (int i = 0; i < w; i++) {
+                    int o = row + i * 3;
+                    if (Math.Abs(px[o + 2] - red) <= tol && Math.Abs(px[o + 1] - green) <= tol && Math.Abs(px[o] - blue) <= tol) {
+                        n++;
+                        if (i < l) l = i; if (i > r) r = i; if (j < t) t = j; if (j > bo) bo = j;
+                    }
+                }
+            }
+            if (n == 0) return new int[] { 0, 0, 0, 0, 0 };
+            return new int[] { x + l, y + t, x + r, y + bo, n };
+        }
+    }
+
+    // Share (0..1000) of pixels in the region that are not near-black: a black or blank remote
+    // picture scores close to 0.
+    public static int NonBlack(int x, int y, int w, int h) {
+        using (Bitmap b = Grab(x, y, w, h)) {
+            int n = 0, all = 0;
+            for (int j = 0; j < h; j += 4) for (int i = 0; i < w; i += 4) {
+                Color c = b.GetPixel(i, j); all++;
+                if (c.R + c.G + c.B > 60) n++;
+            }
+            return all == 0 ? 0 : n * 1000 / all;
+        }
+    }
+
+    // Real mouse input (SendInput), moved at a human pace with ease-in-out and a slight arc.
+    static void MoveAbs(int x, int y) {
+        int vx = GetSystemMetrics(76), vy = GetSystemMetrics(77), vw = GetSystemMetrics(78), vh = GetSystemMetrics(79);
+        INPUT[] i = new INPUT[1];
+        i[0].type = 0;
+        i[0].u.mi.dx = (int)Math.Round((x - vx) * 65535.0 / (vw - 1));
+        i[0].u.mi.dy = (int)Math.Round((y - vy) * 65535.0 / (vh - 1));
+        i[0].u.mi.dwFlags = 0x0001 | 0x8000 | 0x4000;
+        SendInput(1, i, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    public static int[] Cursor() { Aware(); POINT p; GetCursorPos(out p); return new int[] { p.X, p.Y }; }
+
+    public static void Glide(int x, int y, int ms) {
+        Aware();
+        POINT p; GetCursorPos(out p);
+        int steps = Math.Max(1, ms / 15);
+        double dx = x - p.X, dy = y - p.Y, len = Math.Sqrt(dx * dx + dy * dy);
+        double bend = Math.Min(60.0, len * 0.08);
+        for (int s = 1; s <= steps; s++) {
+            double t = (double)s / steps;
+            double e = t < 0.5 ? 2 * t * t : 1 - Math.Pow(-2 * t + 2, 2) / 2;
+            double arc = Math.Sin(Math.PI * t) * bend;
+            double nx = len > 0 ? -dy / len : 0, ny = len > 0 ? dx / len : 0;
+            MoveAbs((int)Math.Round(p.X + dx * e + nx * arc), (int)Math.Round(p.Y + dy * e + ny * arc));
+            Thread.Sleep(15);
+        }
+        MoveAbs(x, y);
+    }
+
+    public static void Click(bool right) {
+        INPUT[] i = new INPUT[1];
+        i[0].type = 0;
+        i[0].u.mi.dwFlags = right ? 0x0008u : 0x0002u;
+        SendInput(1, i, Marshal.SizeOf(typeof(INPUT)));
+        Thread.Sleep(90);
+        i[0].u.mi.dwFlags = right ? 0x0010u : 0x0004u;
+        SendInput(1, i, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    // Posts BN_CLICKED for a dialog button found by its caption (used only for the Remote
+    // Desktop client's own prompts on the runner, never inside the captured session).
+    public static int ClickButton(IntPtr dialog, string caption) {
+        int n = 0;
+        EnumChildWindows(dialog, new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (ClassOf(h) == "Button" && TitleOf(h).Replace("&", "") == caption && IsWindowVisible(h)) {
+                PostMessage(GetParent(h), 0x0111, new IntPtr(GetDlgCtrlID(h) & 0xFFFF), h); n++;
+            }
+            return true;
+        }), IntPtr.Zero);
+        return n;
+    }
+
+    public static string ChildTexts(IntPtr parent) {
+        StringBuilder sb = new StringBuilder();
+        EnumChildWindows(parent, new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (IsWindowVisible(h)) sb.Append("[" + ClassOf(h) + ":" + TitleOf(h) + "] ");
+            return true;
+        }), IntPtr.Zero);
+        return sb.ToString();
+    }
+
+    // Plain-colour desktop, no picture.
+    public static void PlainDesktop(int red, int green, int blue) {
+        SetSysColors(1, new int[] { 1 }, new int[] { red | (green << 8) | (blue << 16) });
+        SystemParametersInfo(0x0014, 0, "", 0x01 | 0x02);
+    }
+
+    // Hides the desktop icons (the list view inside Progman or WorkerW).
+    public static int HideDesktopIcons() {
+        int n = 0;
+        EnumWindows(new EnumProc(delegate(IntPtr h, IntPtr l) {
+            IntPtr view = FindWindowEx(h, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (view != IntPtr.Zero) {
+                IntPtr list = FindWindowEx(view, IntPtr.Zero, "SysListView32", null);
+                if (list != IntPtr.Zero) { ShowWindow(list, 0); n++; }
+            }
+            return true;
+        }), IntPtr.Zero);
+        return n;
+    }
+}
