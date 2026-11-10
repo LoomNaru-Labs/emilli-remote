@@ -278,7 +278,19 @@ function Save-Rec($R) {
             Set-Content -Path $listPath -Value $list -Encoding ASCII
             $mkv = Join-Path $Out "$name.mkv"
             cmd /c "`"$($script:FF)`" -hide_banner -loglevel error -y -f concat -safe 0 -i `"$listPath`" -fps_mode cfr -r $Fps -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
-            if (Test-Path $mkv) { Note "video $name.mkv $((Get-Item $mkv).Length) bytes, $(($real + 67) / 1000.0) s" }
+            if (Test-Path $mkv) {
+                Note "video $name.mkv $((Get-Item $mkv).Length) bytes, $(($real + 67) / 1000.0) s"
+                # Read back from the video file itself: frame count and size, and its first,
+                # middle and last frames decoded to pictures (verify\).
+                $ver = Join-Path $Out 'verify'
+                New-Item -ItemType Directory -Force -Path $ver | Out-Null
+                $probe = Join-Path (Split-Path $script:FF) 'ffprobe.exe'
+                if (Test-Path $probe) { Note "ffprobe $name.mkv: $(cmd /c "`"$probe`" -v error -count_frames -select_streams v:0 -show_entries stream=codec_name,width,height,nb_read_frames,r_frame_rate:format=duration -of compact `"$mkv`" 2>&1")" }
+                $inv = [Globalization.CultureInfo]::InvariantCulture
+                foreach ($pt in @(@('first', 0.0), @('middle', ($real / 2000.0)), @('last', [Math]::Max(0.0, $real / 1000.0 - 0.12)))) {
+                    cmd /c "`"$($script:FF)`" -hide_banner -loglevel error -y -ss $(([double]$pt[1]).ToString('0.000', $inv)) -i `"$mkv`" -frames:v 1 `"$ver\$name-video-$($pt[0]).png`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
+                }
+            }
         } else { Note 'no ffmpeg: frames only' }
         $sel | Export-Csv -NoTypeInformation -Path (Join-Path $Out "$name-frames.csv")
         $k = 0
@@ -520,6 +532,19 @@ Ask @{ op = 'warm'; exe = $Exe; peer = $Peer; x = 300; y = 60; w = ($s[2] + 14);
 Start-Sleep -Seconds 2
 Ask @{ op = 'open-main'; exe = $Exe; x = $Region[0]; y = $Region[1]; w = $Region[2]; h = $Region[3] } 60 | Out-Null
 Ask @{ op = 'find-connect' } 20 | Out-Null
+# Attempt 2: the first Printers window took 5 s to open and UI Automation 4 s more to find its
+# items. Both are used once here, before anything is filmed, and the window closed again.
+$t0 = Get-Date
+Start-Process -FilePath (Join-Path $env:SystemRoot 'explorer.exe') -ArgumentList 'shell:::{2227A280-3AEA-1069-A2DE-08002B30309D}'
+$wf = Wait-Window { $_.Cls -eq 'CabinetWClass' -and $_.Title -like 'Printers*' } 30
+if ($wf) {
+    [SL]::Place($wf.Hwnd, 160, 470, 780, 520)
+    $warm = Wait-Until { Uia-Rect $wf.Hwnd $Old } 20 300
+    Note "warm-up of the Printers window: open, item found at $($warm -join ',') after $([int]((Get-Date) - $t0).TotalMilliseconds) ms"
+    [SL]::PostClose($wf.Hwnd)
+    Wait-Until { -not ([SL]::Windows() | Where-Object { $_.Hwnd -eq $wf.Hwnd }) } 10 200 | Out-Null
+} else { Note 'warm-up: no Printers window' }
+[SL]::Front($Notepad.Hwnd)
 Debug-Shot 'staged'
 
 # ---------------------------------------------------------------- item 1: the problem (staff)
@@ -547,7 +572,18 @@ function Staff-Print([string] $Expect) {
         if ($i -ge 0 -and $i -lt $rows.Count) { $sel = $rows[$i].Split('|')[0] }
         Note "printers in the Print dialog: $(($rows | ForEach-Object { $_.Split('|')[0] }) -join ' / '); selected '$sel'"
     }
-    if ($sel -ne $Expect) { Debug-Shot 'unexpected-printer'; throw "the Print dialog has '$sel' selected, not '$Expect'" }
+    if ($sel -ne $Expect) {
+        # Notepad keeps the printer of its last print (attempt 2): the staff picks the right one.
+        $row = $rows | Where-Object { $_.Split('|')[0] -eq $Expect } | Select-Object -First 1
+        if (-not $row) { Debug-Shot 'unexpected-printer'; throw "'$Expect' is not in the Print dialog" }
+        $f5 = $row.Split('|')
+        Staff-Act ([int](([int]$f5[1] + [int]$f5[3]) / 2)) ([int](([int]$f5[2] + [int]$f5[4]) / 2)) 'left' 450
+        Start-Sleep -Milliseconds 200
+        $i = [SL]::ListViewSelected($plv); $sel = if ($i -ge 0 -and $i -lt $rows.Count) { $rows[$i].Split('|')[0] } else { '(none)' }
+        Note "selected in the Print dialog now: '$sel'"
+        if ($sel -ne $Expect) { Debug-Shot 'unexpected-printer'; throw "the Print dialog has '$sel' selected, not '$Expect'" }
+        Mark "staff: chooses '$Expect'"
+    }
     $pbText = ''
     $pb = [SL]::DialogButtonRect('Print', [ref]$pbText)
     if (-not $pb) { throw 'no Print button' }
@@ -625,14 +661,14 @@ Rec-Begin 'r3-store-2-diagnostic' -Helper
 try {
 Helper-Act ([int](($ic[0] + $ic[2]) / 2)) ([int]($ic[1] + ($ic[3] - $ic[1]) * 0.35)) 'double' 650
 Mark "helper: double-click on 'Printer check'"
-$chk = Wait-Window { $_.Title -eq 'Printer check' -and $_.Proc -eq 'powershell' } 10
+$chk = Wait-Window { $_.Title -eq 'Printer check' -and $_.Cls -like 'WindowsForms*' } 10
 if (-not $chk -and -not (Get-CimInstance Win32_Process -Filter "Name='powershell.exe'" | Where-Object { $_.CommandLine -like '*printer-check.ps1*' })) {
     # The double-click only selected the icon: once more, as a person would.
     Debug-Shot 'check-not-started'
     Helper-Act ([int](($ic[0] + $ic[2]) / 2)) ([int]($ic[1] + ($ic[3] - $ic[1]) * 0.35)) 'double' 300
     Mark "helper: double-click on 'Printer check' again"
 }
-if (-not $chk) { $chk = Wait-Window { $_.Title -eq 'Printer check' -and $_.Proc -eq 'powershell' } 25 }
+if (-not $chk) { $chk = Wait-Window { $_.Title -eq 'Printer check' -and $_.Cls -like 'WindowsForms*' } 25 }
 if (-not $chk) { Debug-Shot 'check-missing'; throw 'the printer check window did not open' }
 Mark 'the Printer check window opens'
 $fin = Wait-Until { Test-Path $CheckDone } 30 100

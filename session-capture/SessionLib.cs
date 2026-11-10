@@ -722,6 +722,29 @@ public static class SL {
         }
     }
 
+    // Bands of neighbouring pixel rows in a region that hold at least minRow pixels of a colour
+    // kind (for example the text rows of a menu). Each band: top, bottom (screen pixels).
+    public static int[][] Bands(int x, int y, int w, int h, string kind, int minRow) {
+        using (Bitmap bmp = Grab(x, y, w, h, false)) {
+            BitmapData d = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            byte[] px = new byte[d.Stride * h];
+            Marshal.Copy(d.Scan0, px, 0, px.Length);
+            bmp.UnlockBits(d);
+            List<int[]> res = new List<int[]>();
+            int[] cur = null; int gap = 0;
+            for (int j = 0; j < h; j++) {
+                int n = 0;
+                for (int i = 0; i < w; i++) { int o = j * d.Stride + i * 3; if (IsKind(px[o + 2], px[o + 1], px[o], kind)) n++; }
+                if (n >= minRow) {
+                    if (cur == null) cur = new int[] { y + j, y + j };
+                    cur[1] = y + j; gap = 0;
+                } else if (cur != null && ++gap > 2) { res.Add(cur); cur = null; gap = 0; }
+            }
+            if (cur != null) res.Add(cur);
+            return res.ToArray();
+        }
+    }
+
     // A picture of a region kept for a later comparison, and the box of what changed since.
     static Bitmap kept; static int keptX, keptY;
     public static void Keep(int x, int y, int w, int h) {

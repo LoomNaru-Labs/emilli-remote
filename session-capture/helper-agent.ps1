@@ -310,16 +310,31 @@ function Run($c) {
             $state.ChatL = $ch[0]; $state.ChatT = $ch[1]; $state.ChatR = $ch[2]; $state.ChatB = $ch[3]
             return "$desc; chat button $($ch[0..3] -join ',')"
         }
-        # Chat, then "Text chat" in its menu (the first item, 12 px menu padding, 32 px rows); the
-        # chat window (250x350, flutter/lib/models/chat_model.dart) opens at the Chat button.
+        # Chat, then "Text chat", the first of the two rows of its menu ("Text chat", "Voice call");
+        # the rows are read from the screen (attempt 2: a row-height guess hit "Voice call").
+        # The chat window (250x350, flutter/lib/models/chat_model.dart) opens at the Chat button.
         'chat-open' {
             $bx = [int](($state.ChatL + $state.ChatR) / 2); $by = [int](($state.ChatT + $state.ChatB) / 2)
-            [SL]::Glide($bx, $by, [int]$c.ms); Start-Sleep -Milliseconds 150; [SL]::Click($false)
-            Start-Sleep -Milliseconds 500
+            [SL]::Glide($bx, $by, [int]$c.ms); Start-Sleep -Milliseconds 100
+            [SL]::Keep($state.ChatL - 30, $state.ChatB + 2, 320, 160)
+            [SL]::Click($false)
+            $menu = $null
+            for ($i = 0; $i -lt 25 -and -not $menu; $i++) {
+                Start-Sleep -Milliseconds 60
+                $b = [SL]::ChangedBox(30)
+                if ($b[4] -gt 300 -and ($b[2] - $b[0]) -ge 60 -and ($b[3] - $b[1]) -ge 40) { $menu = $b }
+            }
+            if (-not $menu) { throw "the Chat menu did not open (changed $(([SL]::ChangedBox(30)) -join ','))" }
+            Start-Sleep -Milliseconds 250
+            $menu = [SL]::ChangedBox(30)
+            $rows = @([SL]::Bands($menu[0] + 8, $menu[1] + 2, [Math]::Max(20, [Math]::Min(90, $menu[2] - $menu[0] - 12)), [Math]::Max(10, $menu[3] - $menu[1] - 2), 'dark', 2) | Where-Object { ($_[1] - $_[0]) -ge 5 -and ($_[1] - $_[0]) -le 30 })
+            Log "chat menu box $($menu -join ','); text rows $(($rows | ForEach-Object { '[' + ($_ -join ',') + ']' }) -join ' ')"
+            if ($rows.Count -lt 2) { [SL]::PressKey(0x1B); throw "the Chat menu's two rows were not found (box $($menu -join ','), rows $($rows.Count))" }
             $state.OvL = $state.ChatL - 40; $state.OvT = $state.ChatB + 40
+            $mx = $menu[0] + 46; $my = [int](($rows[0][0] + $rows[0][1]) / 2)
+            [SL]::Glide($mx, $my, 380); Start-Sleep -Milliseconds 120
             [SL]::Keep($state.OvL, $state.OvT, 330, 330)
-            $mx = $state.ChatL + 46; $my = $state.ChatB + 1 + 12 + 16
-            [SL]::Glide($mx, $my, 380); Start-Sleep -Milliseconds 150; [SL]::Click($false)
+            [SL]::Click($false)
             $box = $null
             # Opened = changes spread over a box the chat window's size (the menu closing alone
             # changes a small strip at the top of this area); white may lie on white inside.
