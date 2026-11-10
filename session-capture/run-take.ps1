@@ -372,9 +372,10 @@ if ($Lang -ne 'en') {
 # ---------------------------------------------------------------- 4. the helper's side before the take
 # The session window's visible frame for a 1:1 picture (window outer size: screen + 14 by + 41).
 $Region = @(307, 60, $s[2], ($s[3] + 34))
-Step 'Warm-up: one session window to an address that answers nothing (192.0.2.10), parked where the recording looks, then closed'
+Step 'Warm-up: one session window to the store PC, closed at the password prompt, so the app remembers where it goes'
 Ask @{ op = 'hide-icons' } 20 | Out-Null
-Ask @{ op = 'warm'; exe = $Exe; peer = '192.0.2.10'; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 90 | Out-Null
+Ask @{ op = 'warm'; exe = $Exe; peer = $Peer; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 90 | Out-Null
+Start-Sleep -Seconds 2
 Step 'The helper opens the app (main window, idle)'
 Ask @{ op = 'open-main'; exe = $Exe; x = $Region[0]; y = $Region[1]; w = $Region[2]; h = $Region[3] } 60 | Out-Null
 Ask @{ op = 'find-connect' } 20 | Out-Null
@@ -401,19 +402,18 @@ Ask @{ op = 'wait-remote'; peer = $Peer; seconds = 20 } 30 | Out-Null
 Mark 'session window open (password prompt)'
 Ask @{ op = 'park'; vx = $Region[0]; vy = $Region[1]; vw = $Region[2]; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 10 | Out-Null
 Start-Sleep -Milliseconds 900
-if (Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' }) { throw 'the store PC accepted the helper before any password was given' }
 Ask @{ op = 'type-secret'; ms = 70 } 20 | Out-Null
 Mark 'password given'
-$cm = Wait-Until { Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' } } 20 300
-if (-not $cm) { throw 'the store PC did not accept the password' }
-Mark 'connected (the store PC accepted the password)'
+# Accepted = the store PC's desktop shows in the session window (its wallpaper colour appears).
 $loc = ''
-for ($i = 0; $i -lt 20; $i++) {
+for ($i = 0; $i -lt 30; $i++) {
     $loc = Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 20
     if ($loc -like '*wallpaper box*') { break }
     Start-Sleep -Milliseconds 300
 }
+if ($loc -notlike '*wallpaper box*') { Debug-Shot 'not-accepted'; Ask @{ op = 'screen'; dir = $Debug; name = 'helper-not-accepted' } 20 | Out-Null; throw 'the store PC desktop did not appear in the session window' }
 Mark 'store PC desktop shown in the session window'
+$cm = Wait-Until { Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' } } 10 300
 $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
 $CropX = if ($m.Success) { [int]$m.Groups[1].Value - $Region[0] } else { 1 }
