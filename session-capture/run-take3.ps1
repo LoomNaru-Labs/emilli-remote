@@ -833,15 +833,19 @@ Copy-Item -Force (Join-Path $Shots "r3-store-5-print$Tag-helper-window*.png") $O
 if (-not $through) { [void]$Missed.Add('item 5: the job did not reach the working printer') }
 
 # ---------------------------------------------------------------- evidence and clean-up
-Step 'Session evidence from the logs (short lines)'
-$pattern = 'direct access|Connection opened|onnection closed|Logged|[Ll]ogin|authoriz|[Cc]hat'
+Step 'Session evidence from the logs (short lines), read after the session ends so they are written out'
+Ask @{ op = 'close-remote' } 20 | Out-Null
+$ended = Wait-Until { -not (Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' }) } 15 500
+Note "session over on the store PC: $([bool]$ended)"
+Start-Sleep -Seconds 3
+$pattern = 'direct access|Connection opened|onnection closed|Logged|[Ll]ogin|authoriz|[Cc]hat|ChatMessage'
 $roots = @("$SvcRoot\log", 'C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\log',
            "$env:APPDATA\RustDesk\log", "C:\Users\$HelperUser\AppData\Roaming\RustDesk\log")
 foreach ($root in $roots) {
     if (-not (Test-Path $root)) { continue }
     Get-ChildItem -Path $root -Recurse -Filter '*.log' | ForEach-Object {
         Note "log file $($_.FullName) ($($_.Length) bytes)"
-        $hits = Select-String -Path $_.FullName -Pattern $pattern | Where-Object { $_.Line -notmatch 'ipc connection closed' } | Select-Object -First 14
+        $hits = Select-String -Path $_.FullName -Pattern $pattern | Where-Object { $_.Line -notmatch 'ipc connection closed' } | Select-Object -First 30
         foreach ($h in $hits) {
             $line = $h.Line -replace '[A-Za-z0-9+/]{40,}={0,2}', '(long value hidden)'
             if ($line.Length -gt 240) { $line = $line.Substring(0, 240) + ' ...' }
@@ -850,7 +854,6 @@ foreach ($root in $roots) {
     }
 }
 Get-Content -Path "$Dir\out\agent.log" -ErrorAction SilentlyContinue | ForEach-Object { Note "agent: $_" }
-Ask @{ op = 'close-remote' } 20 | Out-Null
 Ask @{ op = 'quit' } 20 | Out-Null
 Copy-Item -Force "$Dir\out\agent.log", $SinkLog, (Join-Path $Shots 'helper-*.png') $Debug -ErrorAction SilentlyContinue
 Remove-Item -Force -Recurse "$Dir\secret" -ErrorAction SilentlyContinue
