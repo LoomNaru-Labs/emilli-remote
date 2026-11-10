@@ -45,6 +45,8 @@ function Run($c) {
         'pointer' { return [SL]::SetPointerPixels([int]$c.px) }
         # The pointer shown now (over the session window: the store PC's pointer as the app draws it).
         'cursor' { return "pointer now $([SL]::PointerPixels())" }
+        # A plain pointer move on the helper's screen (no click).
+        'glide' { [SL]::Glide([int]$c.x, [int]$c.y, [int]$c.ms); return "pointer at $($c.x),$($c.y)" }
         # Whether the recording draws the helper's own pointer (see SL.WithCursor).
         'rec-cursor' { [SL]::WithCursor = [bool]$c.on; return "own pointer in the recording: $([SL]::WithCursor)" }
         'windows' {

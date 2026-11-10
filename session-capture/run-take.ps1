@@ -25,8 +25,9 @@ param(
     # The app's own language setting (Windows stays English); 'ko' adds -ko to every file name.
     [ValidateSet('en', 'ko')] [string] $Lang = 'en',
     [ValidateSet(100, 125, 150, 175, 200)] [int] $Scale = 175,
-    # 128 px: what Windows' pointer size 4 gives at 175 % is 140; at 100 % size 7 gives 128.
-    [ValidateRange(32, 256)] [int] $PointerPx = 128,
+    # The pointer's size before the display scale: 96 px is Windows' pointer size 5 (32 + 4 x 16);
+    # on the store PC at 175 % the screen shows it at 168 px, and the helper (100 %) gets 168 px.
+    [ValidateRange(32, 256)] [int] $PointerPx = 96,
     [switch] $Record
 )
 $ErrorActionPreference = 'Stop'
@@ -141,7 +142,7 @@ function Helper-Point([int] $X, [int] $Y, [int] $Ms = 900) {
     Ask @{ op = 'move'; rx = $X; ry = $Y; ms = $Ms } 30 | Out-Null
 }
 function Helper-Click([switch] $Right) {
-    Ask @{ op = 'click'; right = [bool]$Right; pause = 180 } 10 | Out-Null
+    Ask @{ op = 'click'; right = [bool]$Right; pause = 150 } 10 | Out-Null
 }
 function Now-Ms { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 
@@ -268,9 +269,9 @@ if (-not $dpiNow) { Debug-Shot 'scale-not-set'; throw "the store PC is not at $S
 Note "store PC pointer: $([SL]::SetPointerPixels($PointerPx))"
 $helperDpi = Ask @{ op = 'dpi' } 20
 if ($helperDpi -notmatch 'DPI 96$') { throw "the helper's screen changed with the store PC ($helperDpi); its picture would not be 1:1" }
-# The helper's own pointer as large in pixels as the store PC's, so it keeps its size where the
-# session window begins.
-Ask @{ op = 'pointer'; px = $PointerPx } 20 | Out-Null
+# The helper's own pointer as large on screen as the store PC's (which Windows enlarges with
+# the scale), so it keeps its size where the session window begins.
+Ask @{ op = 'pointer'; px = [int]($PointerPx * $Scale / 100) } 20 | Out-Null
 
 # ---------------------------------------------------------------- 3. the staged problem on the store PC
 Step "Stage the problem on the store PC ($Set set)"
@@ -424,16 +425,14 @@ Ask @{ op = 'open-main'; exe = $Exe; x = $Region[0]; y = $Region[1]; w = $Region
 $cr = Ask @{ op = 'find-connect' } 20
 Ask @{ op = 'screen'; dir = $Shots; name = 'debug-helper-main' } 20 | Out-Null
 Copy-Item -Force "$Shots\debug-helper-main.png" $Debug -ErrorAction SilentlyContinue
-# The store PC's own pointer waits where the helper's pointer will be when the session shows
-# (the Connect button, under the session window's picture at +1,+32), so there is one pointer
-# that does not jump when the helper's recording stops drawing its own (SL.WithCursor).
-$cbm = [regex]::Match($cr, 'Connect button (\d+),(\d+) to (\d+),(\d+)')
-if ($cbm.Success) {
-    $sx0 = [int](([int]$cbm.Groups[1].Value + [int]$cbm.Groups[3].Value) / 2) - ($Region[0] + 1)
-    $sy0 = [int](([int]$cbm.Groups[2].Value + [int]$cbm.Groups[4].Value) / 2) - ($Region[1] + 32)
-    [SL]::Glide($sx0, $sy0, 60)
-    Note "store PC pointer placed at $sx0,$sy0"
-}
+# The store PC's own pointer waits where the helper's pointer will be when the session shows:
+# a resting point on the store PC's screen in the old queue's empty list, clear of the error
+# window and its text (the helper moves there over the password prompt; the session window's
+# picture starts at +1,+32). So there is one pointer that does not jump when the helper's
+# recording stops drawing its own (SL.WithCursor).
+$RestX = 1260; $RestY = 300
+[SL]::Glide($RestX, $RestY, 60)
+Note "store PC pointer placed at $RestX,$RestY"
 
 # ---------------------------------------------------------------- 5. the take
 Step 'The take: Connect from the main window, then the fix through the session (both screens recorded)'
@@ -454,7 +453,8 @@ Mark 'Connect clicked'
 Ask @{ op = 'wait-remote'; peer = $Peer; seconds = 20 } 30 | Out-Null
 Mark 'session window open (password prompt)'
 Ask @{ op = 'park'; vx = $Region[0]; vy = $Region[1]; vw = $Region[2]; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 10 | Out-Null
-Start-Sleep -Milliseconds 500
+Ask @{ op = 'glide'; x = ($Region[0] + 1 + $RestX); y = ($Region[1] + 32 + $RestY); ms = 450 } 10 | Out-Null
+Start-Sleep -Milliseconds 100
 Ask @{ op = 'type-secret'; ms = 55 } 20 | Out-Null
 Mark 'password given'
 # Accepted = the store PC's desktop fills the session window: wallpaper colour across the whole
@@ -466,14 +466,14 @@ function Desktop-Shown {
     return $null
 }
 $loc = $null
-for ($i = 0; $i -lt 16 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 400 } }
+for ($i = 0; $i -lt 32 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 200 } }
 if (-not $loc) {
     # Once more: a click into the password prompt (centred in the session window), then the
     # password again.
     Ask @{ op = 'screen'; dir = $Debug; name = 'helper-password-retry' } 20 | Out-Null
     Ask @{ op = 'type-secret'; ms = 70; clickx = ($Region[0] + [int]($Region[2] / 2)); clicky = ($Region[1] + [int]($Region[3] / 2) - 10) } 20 | Out-Null
     Mark 'password given again'
-    for ($i = 0; $i -lt 20 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 400 } }
+    for ($i = 0; $i -lt 40 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 200 } }
 }
 if (-not $loc) { Debug-Shot 'not-accepted'; Ask @{ op = 'screen'; dir = $Debug; name = 'helper-not-accepted' } 20 | Out-Null; throw 'the store PC desktop did not appear in the session window' }
 Mark 'store PC desktop shown in the session window'
@@ -483,25 +483,25 @@ $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
 $CropX = if ($m.Success) { [int]$m.Groups[1].Value - $Region[0] } else { 1 }
 $CropY = if ($m.Success) { [int]$m.Groups[2].Value - $Region[1] } else { 31 }
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 250
 
 # Navigation 0 (addendum 2): OK on the error window, then the old printer's queue brought forward.
 $ok = [SL]::ButtonRect($ErrBox.Hwnd, 'OK')
 if (-not $ok) { Debug-Shot 'ok-missing'; throw 'no OK button on the error window' }
-Helper-Point ([int](($ok[0] + $ok[2]) / 2)) ([int](($ok[1] + $ok[3]) / 2)) 650
+Helper-Point ([int](($ok[0] + $ok[2]) / 2)) ([int](($ok[1] + $ok[3]) / 2)) 550
 Helper-Click
 Mark 'OK on the error window'
 $gone = Wait-Until { -not ([SL]::Windows() | Where-Object { $_.Hwnd -eq $ErrBox.Hwnd }) } 4 100
 Note "error window closed: $([bool]$gone)"
 $oqf = [SL]::Frame($OldQueue.Hwnd)
-Helper-Point ($oqf.Left + 360) ($oqf.Top + [int](15 * [SL]::MonitorDpi() / 96)) 600
+Helper-Point ($oqf.Left + 360) ($oqf.Top + [int](15 * [SL]::MonitorDpi() / 96)) 500
 Helper-Click
 Mark "the old printer's queue brought forward"
 
 # Navigation 1: the stuck job on the old printer.
 $lv = [SL]::ChildRect($OldQueue.Hwnd, 'SysListView32')
 $hd = [SL]::ChildRect($OldQueue.Hwnd, 'SysHeader32')
-Helper-Point ($lv[0] + 140) ($hd[3] + [int](10 * [SL]::MonitorDpi() / 96)) 600
+Helper-Point ($lv[0] + 140) ($hd[3] + [int](10 * [SL]::MonitorDpi() / 96)) 500
 Helper-Click -Right
 Mark 'right-click on the stuck job'
 $menuTexts = ''
@@ -532,7 +532,7 @@ Helper-Click
 Mark 'Print... chosen'
 $dlg = Wait-Until { [SL]::Windows() | Where-Object { $_.Cls -eq '#32770' -and $_.Title -eq 'Print' } | Select-Object -First 1 } 8 150
 if (-not $dlg) { Debug-Shot 'print-dialog-missing'; throw 'the Print dialog did not open' }
-Start-Sleep -Milliseconds 300
+Start-Sleep -Milliseconds 150
 $target = $null
 $plv = [SL]::ChildHandle($dlg.Hwnd, 'SysListView32')
 if ($plv -ne [IntPtr]::Zero) {
@@ -577,7 +577,7 @@ Mark "printed: the job went through to '$($P.Printer)'"
 $shown = $null
 if ($gqList -ne [IntPtr]::Zero) { $shown = Wait-Until { @([SL]::ListViewItems($gqList, 1)) | Where-Object { $_ -like 'Printed|*' } | Select-Object -First 1 } 4 150 }
 if ($shown) { Mark "'$($P.Printer)' queue shows Printed" } else { Note "the working queue's Status column: $(@([SL]::ListViewItems($gqList, 1)) -join ' / ')" }
-Start-Sleep -Milliseconds 700
+Start-Sleep -Milliseconds 600
 Mark 'end'
 
 # The cut: 16 to 22 s (addendum 2), the same still time before the first mark and after the last.

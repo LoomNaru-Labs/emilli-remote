@@ -268,13 +268,17 @@ public static class SL {
                 if (GetCursorInfo(ref ci) && (ci.flags & 1) != 0 && ci.hCursor != IntPtr.Zero) {
                     ICONINFO ii;
                     if (GetIconInfo(ci.hCursor, out ii)) {
-                        // Drawn at the pointer's real size (a larger pointer set in Windows is a
-                        // larger bitmap; size 0 could draw the standard 32 px one).
+                        // Drawn at the size the screen shows it: the pointer's bitmap times the
+                        // display scale (Windows enlarges the pointer with the scale; run
+                        // 42815845362 showed the session picture's pointer that much larger).
                         BITMAP bm; int cw = 0, chh = 0;
                         if (ii.hbmColor != IntPtr.Zero && GetObject(ii.hbmColor, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { cw = bm.bmWidth; chh = bm.bmHeight; }
                         else if (ii.hbmMask != IntPtr.Zero && GetObject(ii.hbmMask, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { cw = bm.bmWidth; chh = bm.bmHeight / 2; }
+                        int dpi = MonitorDpi();
+                        double f = dpi > 0 ? dpi / 96.0 : 1.0;
                         IntPtr hdc = g.GetHdc();
-                        DrawIconEx(hdc, ci.pt.X - ii.xHotspot - x, ci.pt.Y - ii.yHotspot - y, ci.hCursor, cw, chh, 0, IntPtr.Zero, 3);
+                        DrawIconEx(hdc, ci.pt.X - (int)Math.Round(ii.xHotspot * f) - x, ci.pt.Y - (int)Math.Round(ii.yHotspot * f) - y, ci.hCursor,
+                            (int)Math.Round(cw * f), (int)Math.Round(chh * f), 0, IntPtr.Zero, 3);
                         g.ReleaseHdc(hdc);
                         if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
                         if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
