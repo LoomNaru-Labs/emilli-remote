@@ -135,6 +135,107 @@ function Run($c) {
             [SL]::Click([bool]$c.right)
             return "clicked $(if ($c.right) { 'right' } else { 'left' }) at $(([SL]::Cursor()) -join ',')"
         }
+        'hide-icons' { return "desktop icons hidden: $([SL]::HideDesktopIcons())" }
+        'warm' {
+            # A first connection without the password, only so that the app remembers where its
+            # session window goes; it is closed again at the password prompt.
+            $before = @(RustDeskWindows | ForEach-Object { $_.Hwnd })
+            $proc = Start-Process -FilePath $c.exe -ArgumentList @('--connect', $c.peer) -PassThru
+            $w = $null
+            for ($i = 0; $i -lt 40 -and -not $w; $i++) {
+                Start-Sleep -Milliseconds 500
+                $w = RustDeskWindows | Where-Object { $_.Title -like "*$($c.peer)*" -and $before -notcontains $_.Hwnd } | Select-Object -First 1
+            }
+            if (-not $w) { throw 'no session window for the warm-up' }
+            Start-Sleep -Seconds 2
+            [SL]::Place($w.Hwnd, [int]$c.x, [int]$c.y, [int]$c.w, [int]$c.h)
+            Start-Sleep -Seconds 2
+            $placed = [SL]::Info($w.Hwnd)
+            [SL]::PostClose($w.Hwnd)
+            for ($i = 0; $i -lt 20; $i++) {
+                Start-Sleep -Milliseconds 500
+                if (-not (RustDeskWindows | Where-Object { $_.Hwnd -eq $w.Hwnd })) { break }
+            }
+            $left = @(RustDeskWindows | Where-Object { $_.Hwnd -eq $w.Hwnd }).Count
+            if ($left -gt 0) { Stop-Process -Id $w.Pid -Force; Start-Sleep -Seconds 2; return "warm-up window placed $placed; it did not close, its process was stopped" }
+            Start-Sleep -Seconds 1
+            return "warm-up window placed $placed and closed"
+        }
+        'open-main' {
+            $before = @(RustDeskWindows | ForEach-Object { $_.Hwnd })
+            Start-Process -FilePath $c.exe | Out-Null
+            $m = $null
+            for ($i = 0; $i -lt 60 -and -not $m; $i++) {
+                Start-Sleep -Milliseconds 500
+                $m = RustDeskWindows | Where-Object { $_.Cls -eq 'FLUTTER_RUNNER_WIN32_WINDOW' -and $before -notcontains $_.Hwnd } | Select-Object -First 1
+            }
+            if (-not $m) { throw "no main window; RustDesk windows: $((RustDeskWindows | ForEach-Object { $_.ToString() }) -join ' / ')" }
+            Start-Sleep -Seconds 3
+            $m = [SL]::Info($m.Hwnd)
+            $state.Main = $m.Hwnd
+            $nx = [int]$c.x + [int](([int]$c.w - $m.Width) / 2); $ny = [int]$c.y + [int](([int]$c.h - $m.Height) / 2)
+            [SL]::MoveFrameTo($m.Hwnd, $nx, $ny)
+            Start-Sleep -Milliseconds 800
+            [SL]::Front($m.Hwnd)
+            Start-Sleep -Milliseconds 800
+            return "main window $([SL]::Info($m.Hwnd))"
+        }
+        'find-connect' {
+            # The Connect button is the app's filled accent-blue button under the address field
+            # (flutter/lib/desktop/pages/connection_page.dart: a 320-pixel field, then Connect and a
+            # 28-pixel menu button, right-aligned).
+            $clip = [SL]::Clip($state.Main)
+            $x0 = $clip[0] + [int]($clip[2] * 0.3); $h0 = [int]($clip[3] * 0.6)
+            $box = [SL]::ColorBox($x0, $clip[1], $clip[0] + $clip[2] - $x0, $h0, 0, 113, 255, 45)
+            if ($box[4] -eq 0) { throw "no Connect button colour in the main window $($clip -join ',')" }
+            $state.ConnectX = [int](($box[0] + $box[2]) / 2); $state.ConnectY = [int](($box[1] + $box[3]) / 2)
+            $state.FieldX = $box[2] + 36 - 160; $state.FieldY = $box[1] - 36
+            return "Connect button $($box[0]),$($box[1]) to $($box[2]),$($box[3]) ($($box[4]) px); field point $($state.FieldX),$($state.FieldY)"
+        }
+        'click-at' {
+            $x = if ($c.what -eq 'field') { $state.FieldX } elseif ($c.what -eq 'connect') { $state.ConnectX } else { [int]$c.x }
+            $y = if ($c.what -eq 'field') { $state.FieldY } elseif ($c.what -eq 'connect') { $state.ConnectY } else { [int]$c.y }
+            [SL]::Glide($x, $y, [int]$c.ms)
+            Start-Sleep -Milliseconds 200
+            [SL]::Click($false)
+            return "clicked $($c.what) at $x,$y"
+        }
+        'type' { [SL]::TypeText([string]$c.text, [int]$c.ms); return "typed $($c.text.Length) characters" }
+        'type-secret' {
+            $pw = (Get-Content -Path (Join-Path $Dir 'secret\pw.txt') -TotalCount 1).Trim()
+            [SL]::TypeText($pw, [int]$c.ms)
+            $n = $pw.Length; $pw = $null
+            Start-Sleep -Milliseconds 250
+            [SL]::PressKey(0x0D)
+            return "typed the password ($n characters) and Enter"
+        }
+        'wait-remote' {
+            $w = $null
+            for ($i = 0; $i -lt [int]$c.seconds * 10 -and -not $w; $i++) {
+                Start-Sleep -Milliseconds 100
+                $w = RustDeskWindows | Where-Object { $_.Title -like "*$($c.peer)*" } | Select-Object -First 1
+            }
+            if (-not $w) { throw 'no session window' }
+            $state.Remote = $w.Hwnd
+            return "session window $w"
+        }
+        'park' {
+            $i = [SL]::Info($state.Remote)
+            $note = 'already in place'
+            if ($i.Left -ne [int]$c.vx -or $i.Top -ne [int]$c.vy -or $i.Width -ne [int]$c.vw) {
+                [SL]::Place($state.Remote, [int]$c.x, [int]$c.y, [int]$c.w, [int]$c.h); $note = "moved from $($i.Left),$($i.Top) $($i.Width)x$($i.Height)"
+            }
+            [SL]::Front($state.Remote)
+            return "$note; $([SL]::Info($state.Remote))"
+        }
+        'close-remote' {
+            [SL]::PostClose($state.Remote)
+            for ($i = 0; $i -lt 20; $i++) {
+                Start-Sleep -Milliseconds 500
+                if (-not (RustDeskWindows | Where-Object { $_.Hwnd -eq $state.Remote })) { return 'session window closed' }
+            }
+            return 'session window still open'
+        }
         'lang' {
             # The app's own language option for this user (RustDesk_local.toml), Windows unchanged.
             $f = Join-Path $env:APPDATA 'RustDesk\config\RustDesk_local.toml'
@@ -147,7 +248,7 @@ function Run($c) {
             return "lang '$($c.lang)' in $f"
         }
         'rec-start' {
-            $clip = [SL]::Clip($state.Remote)
+            $clip = if ($c.w) { @([int]$c.x, [int]$c.y, [int]$c.w, [int]$c.h) } else { [SL]::Clip($state.Remote) }
             [SL]::RecordStart($clip[0], $clip[1], $clip[2], $clip[3], [int]$c.fps, $c.dir)
             return "recording the session window $($clip -join ',') at $($c.fps) fps"
         }

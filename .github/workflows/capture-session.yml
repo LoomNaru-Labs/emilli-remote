@@ -38,9 +38,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        set: [office, store]
-        # The app's own language; Windows stays English. The recordings come from the en jobs.
-        lang: [en, ko]
+        # The take (run-take.ps1, brief addendum 1), office set first; "probe" checks which
+        # printer faults Windows itself shows as an error.
+        include:
+          - { set: office, lang: en }
+          - { set: probe, lang: en }
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -75,8 +77,14 @@ jobs:
         run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
 
       - name: Connected session
+        if: matrix.set != 'probe'
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-session.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} ${{ matrix.lang == 'en' && '-Record' || '' }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-take.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
+
+      - name: Printer probe
+        if: matrix.set == 'probe'
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\probe-printer.ps1 -Out "$env:RUNNER_TEMP\session"
 
       - name: Keep the screenshots
         if: always()

@@ -104,6 +104,14 @@ public static class SL {
 
     public static void Show(IntPtr h, int cmd) { ShowWindow(h, cmd); }
 
+    // Moves a window so that its visible frame starts at x,y; the size stays.
+    public static void MoveFrameTo(IntPtr h, int x, int y) {
+        Aware();
+        RECT r; GetWindowRect(h, out r);
+        RECT f = Frame(h);
+        SetWindowPos(h, IntPtr.Zero, x - (f.Left - r.Left), y - (f.Top - r.Top), 0, 0, 0x0001 | 0x0004 | 0x0010);
+    }
+
     // Foreground from a background process: a tap of Alt lifts the foreground lock.
     public static void Front(IntPtr h) {
         Aware();
@@ -354,6 +362,97 @@ public static class SL {
         dialog = d;
         return found;
     }
+
+    public static IntPtr ChildHandle(IntPtr parent, string cls) {
+        IntPtr found = IntPtr.Zero;
+        EnumChildWindows(parent, new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (found == IntPtr.Zero && IsWindowVisible(h) && ClassOf(h) == cls) found = h;
+            return true;
+        }), IntPtr.Zero);
+        return found;
+    }
+
+    // A menu bar item of a window whose text starts with the word: screen rectangle.
+    [DllImport("user32.dll")] static extern IntPtr GetMenu(IntPtr h);
+    public static int[] MenuBarItemRect(IntPtr wnd, string word) {
+        Aware();
+        IntPtr menu = GetMenu(wnd);
+        int n = GetMenuItemCount(menu);
+        for (int i = 0; i < n; i++) {
+            StringBuilder s = new StringBuilder(256);
+            GetMenuString(menu, (uint)i, s, 256, 0x400);
+            RECT r;
+            if (s.ToString().Replace("&", "").StartsWith(word, StringComparison.OrdinalIgnoreCase) && GetMenuItemRect(wnd, menu, (uint)i, out r))
+                return new int[] { r.Left, r.Top, r.Right, r.Bottom };
+        }
+        return null;
+    }
+
+    // Items of a list view in another process (text of column 0 and screen rectangle), read
+    // through a small buffer in that process, the usual way for a cross-process list view.
+    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+    [DllImport("kernel32.dll")] static extern IntPtr VirtualAllocEx(IntPtr p, IntPtr a, UIntPtr size, uint type, uint protect);
+    [DllImport("kernel32.dll")] static extern bool VirtualFreeEx(IntPtr p, IntPtr a, UIntPtr size, uint type);
+    [DllImport("kernel32.dll")] static extern bool WriteProcessMemory(IntPtr p, IntPtr a, byte[] b, UIntPtr n, out UIntPtr w);
+    [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr p, IntPtr a, byte[] b, UIntPtr n, out UIntPtr r);
+    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
+    [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref POINT p);
+    public static string[] ListViewItems(IntPtr lv) {
+        Aware();
+        List<string> res = new List<string>();
+        uint pid; GetWindowThreadProcessId(lv, out pid);
+        IntPtr proc = OpenProcess(0x0008 | 0x0010 | 0x0020 | 0x0400, false, pid);
+        if (proc == IntPtr.Zero) return res.ToArray();
+        IntPtr mem = VirtualAllocEx(proc, IntPtr.Zero, (UIntPtr)4096, 0x3000, 0x04);
+        try {
+            int count = (int)SendMessage(lv, 0x1004, IntPtr.Zero, IntPtr.Zero);
+            UIntPtr io;
+            for (int i = 0; i < count; i++) {
+                byte[] item = new byte[88];
+                BitConverter.GetBytes(0).CopyTo(item, 8);                         // iSubItem
+                BitConverter.GetBytes(mem.ToInt64() + 1024).CopyTo(item, 24);    // pszText
+                BitConverter.GetBytes(256).CopyTo(item, 32);                       // cchTextMax
+                WriteProcessMemory(proc, mem, item, (UIntPtr)item.Length, out io);
+                SendMessage(lv, 0x1073, new IntPtr(i), mem);                        // LVM_GETITEMTEXTW
+                byte[] text = new byte[512];
+                ReadProcessMemory(proc, new IntPtr(mem.ToInt64() + 1024), text, (UIntPtr)text.Length, out io);
+                string t = Encoding.Unicode.GetString(text);
+                int z = t.IndexOf('\0'); if (z >= 0) t = t.Substring(0, z);
+                byte[] rc = new byte[16];                                          // RECT, left = LVIR_BOUNDS (0)
+                WriteProcessMemory(proc, new IntPtr(mem.ToInt64() + 512), rc, (UIntPtr)16, out io);
+                SendMessage(lv, 0x100E, new IntPtr(i), new IntPtr(mem.ToInt64() + 512)); // LVM_GETITEMRECT
+                ReadProcessMemory(proc, new IntPtr(mem.ToInt64() + 512), rc, (UIntPtr)16, out io);
+                POINT a = new POINT(); a.X = BitConverter.ToInt32(rc, 0); a.Y = BitConverter.ToInt32(rc, 4);
+                POINT b = new POINT(); b.X = BitConverter.ToInt32(rc, 8); b.Y = BitConverter.ToInt32(rc, 12);
+                ClientToScreen(lv, ref a); ClientToScreen(lv, ref b);
+                res.Add(t + "|" + a.X + "|" + a.Y + "|" + b.X + "|" + b.Y);
+            }
+        } finally {
+            VirtualFreeEx(proc, mem, UIntPtr.Zero, 0x8000);
+            CloseHandle(proc);
+        }
+        return res.ToArray();
+    }
+
+    // Real typing: one Unicode key press per character, at the given pace.
+    public static void TypeText(string text, int msPerChar) {
+        foreach (char ch in text) {
+            INPUT[] i = new INPUT[2];
+            i[0].type = 1; i[0].u.ki.scan = ch; i[0].u.ki.flags = 0x0004;
+            i[1].type = 1; i[1].u.ki.scan = ch; i[1].u.ki.flags = 0x0004 | 0x0002;
+            SendInput(2, i, Marshal.SizeOf(typeof(INPUT)));
+            Thread.Sleep(msPerChar);
+        }
+    }
+
+    public static void PressKey(ushort vk) {
+        INPUT[] i = new INPUT[2];
+        i[0].type = 1; i[0].u.ki.vk = vk;
+        i[1].type = 1; i[1].u.ki.vk = vk; i[1].u.ki.flags = 0x0002;
+        SendInput(2, i, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    public static void PostClose(IntPtr h) { PostMessage(h, 0x0010, IntPtr.Zero, IntPtr.Zero); }
 
     public static string ChildTexts(IntPtr parent) {
         StringBuilder sb = new StringBuilder();
