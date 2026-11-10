@@ -18,9 +18,23 @@
 param(
     [Parameter(Mandatory)] [ValidateSet('office', 'store')] [string] $Set,
     [Parameter(Mandatory)] [string] $Setup,
-    [Parameter(Mandatory)] [string] $Out
+    [Parameter(Mandatory)] [string] $Out,
+    # The app's own language setting (Windows stays English); 'ko' adds -ko to every file name.
+    [ValidateSet('en', 'ko')] [string] $Lang = 'en',
+    [switch] $Record
 )
 $ErrorActionPreference = 'Stop'
+$Tag = if ($Lang -eq 'ko') { '-ko' } else { '' }
+
+# Sets lang in a RustDesk_local.toml (the app's own language option), keeping the rest.
+function Set-AppLanguage([string] $File, [string] $Code) {
+    New-Item -ItemType Directory -Force -Path (Split-Path $File) | Out-Null
+    $text = if (Test-Path $File) { [System.IO.File]::ReadAllText($File) } else { '' }
+    if ($text -match "(?m)^lang\s*=") { $text = $text -replace "(?m)^lang\s*=.*$", "lang = '$Code'" }
+    elseif ($text -match "(?m)^\[options\]\s*$") { $text = $text -replace "(?m)^\[options\]\s*$", "[options]`nlang = '$Code'" }
+    else { $text = $text.TrimEnd() + "`n`n[options]`nlang = '$Code'`n" }
+    [System.IO.File]::WriteAllText($File, $text, (New-Object System.Text.UTF8Encoding($false)))
+}
 
 $Dir = 'C:\sc'
 $Exe = 'C:\Program Files\RustDesk\rustdesk.exe'
@@ -287,6 +301,8 @@ $job = Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue
 if (-not $job) { throw 'the print job did not stay in the queue' }
 Note "queue: $(@($job).Count) job(s); '$($job[0].DocumentName)' status '$($job[0].JobStatus)'"
 
+# A runner leftover: Windows' Performance Options window with its paging file notice.
+Get-Process -Name SystemPropertiesPerformance -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Process -FilePath notepad.exe -ArgumentList "`"$docPath`""
 Start-Process -FilePath explorer.exe -ArgumentList "`"$($P.Root)`""
 Start-Process -FilePath rundll32.exe -ArgumentList "printui.dll,PrintUIEntry /o /n `"$($P.Printer)`""
@@ -315,6 +331,12 @@ foreach ($w in [SL]::Windows()) {
 Debug-Shot 'staged'
 [SL]::Windows() | ForEach-Object { Note "console window: $_" }
 
+if ($Lang -ne 'en') {
+    Step "The app's own language set to '$Lang' on both PCs (Windows stays English)"
+    Set-AppLanguage (Join-Path $env:APPDATA 'RustDesk\config\RustDesk_local.toml') $Lang
+    Ask @{ op = 'lang'; lang = $Lang } 20 | Out-Null
+}
+
 # ---------------------------------------------------------------- 4. the connection
 Step 'The helper connects to the store PC (127.0.0.1, direct access, store PC password)'
 Ask @{ op = 'connect'; exe = $Exe; peer = $Peer; seconds = 45 } 120 | Out-Null
@@ -330,11 +352,19 @@ Ask @{ op = 'tidy' } 20 | Out-Null
 # exactly 1920 pixels wide (visible frame 1920; 7 invisible border pixels on each side) shows
 # the store PC's 1920x1080 screen at 1:1.
 # Below the 30-pixel tab bar the picture area is centred; 4 spare pixels keep the fit at 1:1.
-Ask @{ op = 'place'; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 20 | Out-Null
-Start-Sleep -Seconds 2
+# Two pixels wider first, which shows the picture's last column too if the window keeps 1:1;
+# otherwise back to the width that is known to keep 1:1.
+foreach ($extra in @(16, 14)) {
+    Ask @{ op = 'place'; x = 300; y = 60; w = ($s[2] + $extra); h = ($s[3] + 41) } 20 | Out-Null
+    Start-Sleep -Seconds 2
+    $loc = Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 30
+    $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to (\d+),(\d+)')
+    $bw = if ($m.Success) { [int]$m.Groups[3].Value - [int]$m.Groups[1].Value + 1 } else { 0 }
+    Note "window width +${extra}: picture $bw pixels wide"
+    if ($bw -eq $s[2]) { break }
+}
 Ask @{ op = 'screen'; dir = $Shots; name = 'debug-helper-after-place' } 20 | Out-Null
 Copy-Item -Force "$Shots\debug-helper-after-place.png" $Debug -ErrorAction SilentlyContinue
-Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 30 | Out-Null
 
 # Calibration through the session itself: the helper's pointer goes to two points of the
 # picture and the store PC reports where its own pointer landed. This also shows in the log
@@ -366,6 +396,7 @@ Note "check: asked 960,540 -> store PC pointer at $($c[0]),$($c[1])"
 $base = "session-$Set"
 # The runner's own Windows notices (such as the temporary paging file message) are closed;
 # they are not part of the staged scene.
+Get-Process -Name SystemPropertiesPerformance -ErrorAction SilentlyContinue | ForEach-Object { Note "runner leftover closed: $($_.ProcessName)"; $_ | Stop-Process -Force }
 foreach ($w in [SL]::Windows()) {
     if ($w.Cls -eq '#32770' -and [SL]::SessionOf($w.Pid) -eq [SL]::MySession()) {
         $texts = [SL]::ChildTexts($w.Hwnd)
@@ -380,16 +411,18 @@ foreach ($w in [SL]::Windows()) {
 Start-Sleep -Seconds 2
 Helper-Point 1500 760 700
 Start-Sleep -Seconds 2
-Ask @{ op = 'shot'; dir = $Shots; name = "$base-01-controller-problem"; screen = $true } 30 | Out-Null
-Note "controlled screen: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen.png")))"
+Ask @{ op = 'shot'; dir = $Shots; name = "$base-01-controller-problem$Tag"; screen = $true } 30 | Out-Null
+Note "controlled screen: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen$Tag.png")))"
 Note "queue before the fix: $(@(Get-PrintJob -PrinterName $P.Printer).Count) job(s), status '$((Get-PrintJob -PrinterName $P.Printer)[0].JobStatus)'"
 
-Step 'The helper cancels the stuck job through the session (real mouse input), recorded on both PCs'
+Step 'The helper cancels the stuck job through the session (real mouse input)'
 $recHelper = Join-Path $Shots "rec-$base-controller"
 $recStore = Join-Path $Shots "rec-$base-controlled"
-[SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
-Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps } 20 | Out-Null
-Start-Sleep -Milliseconds 1200
+if ($Record) {
+    [SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
+    Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps } 20 | Out-Null
+    Start-Sleep -Milliseconds 700
+}
 # The job row: the first row of the queue's list, just under its column headers.
 $lv = [SL]::ChildRect($Queue.Hwnd, 'SysListView32')
 $hd = [SL]::ChildRect($Queue.Hwnd, 'SysHeader32')
@@ -412,17 +445,37 @@ Helper-Click
 $empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40
 Note "queue after the fix: $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue).Count) job(s)"
 if (-not $empty) { throw 'the job did not go away' }
-Start-Sleep -Seconds 2
+Start-Sleep -Milliseconds 1000
 $nr = [SL]::Info($Notepad.Hwnd)
 Helper-Point ($nr.Left + 420) ($nr.Top + 300) 900
 Helper-Click
-Start-Sleep -Seconds 2
-Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed"; screen = $true } 30 | Out-Null
-Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed.png")))"
-Start-Sleep -Milliseconds 1000
-Ask @{ op = 'rec-stop' } 120 | Out-Null
-Note "store PC recording: $([SL]::RecordStop())"
+Start-Sleep -Milliseconds 1500
+Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed$Tag"; screen = $true } 30 | Out-Null
+Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed$Tag.png")))"
+if ($Record) {
+    Start-Sleep -Milliseconds 600
+    Ask @{ op = 'rec-stop' } 120 | Out-Null
+    Note "store PC recording: $([SL]::RecordStop())"
+}
 
+# Extra: the store PC's connection panel opened from its taskbar button, as staff would see it.
+Step 'Extra: the connection panel on the store PC, opened from its taskbar button'
+$cmWin = $null
+if ($cm) {
+    $cmPid = [uint32](@($cm)[0].ProcessId)
+    $cmWin = [SL]::Windows() | Where-Object { $_.Pid -eq $cmPid -and $_.Width -gt 50 } | Select-Object -First 1
+}
+if ($cmWin) {
+    Note "panel before: $cmWin"
+    [SL]::Show($cmWin.Hwnd, 9); [SL]::Front($cmWin.Hwnd)
+    Start-Sleep -Seconds 2
+    Note "panel after: $([SL]::Info($cmWin.Hwnd))"
+    Note "controlled screen with the panel: $([SL]::ShotScreen((Join-Path $Shots "$base-06-controlled-screen-panel$Tag.png")))"
+    Start-Sleep -Milliseconds 800
+    Ask @{ op = 'shot'; dir = $Shots; name = "$base-06-controller-panel$Tag" } 30 | Out-Null
+} else { Note 'no connection panel window found on the store PC' }
+
+if ($Record) {
 Step 'Lossless videos of the recordings (FFV1)'
 $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
 if (-not $ff) {
@@ -442,17 +495,22 @@ foreach ($rec in @(@($recHelper, "$base-05-fix-controller"), @($recStore, "$base
     }
     Copy-Item -Force (Join-Path $rec[0] 'frames.csv') (Join-Path $Shots "$($rec[1])-frames.csv")
 }
+}
 
 # ---------------------------------------------------------------- 6. evidence and clean-up
-Step 'Session evidence from the logs'
-$pattern = 'direct access from|Connection opened|onnection.*(established|closed)|login|Login|authoriz|peer info|PeerInfo|selected_sid|video service|Mouse|mouse'
-foreach ($root in @("$SvcRoot\log", "$env:APPDATA\RustDesk\log", "C:\Users\$HelperUser\AppData\Roaming\RustDesk\log")) {
+Step 'Session evidence from the logs (short lines)'
+$pattern = 'direct access|Connection opened|onnection closed|Logged|[Ll]ogin|authoriz|handle_peer_info|peer info'
+$roots = @("$SvcRoot\log", 'C:\Windows\System32\config\systemprofile\AppData\Roaming\RustDesk\log',
+           "$env:APPDATA\RustDesk\log", "C:\Users\$HelperUser\AppData\Roaming\RustDesk\log")
+foreach ($root in $roots) {
     if (-not (Test-Path $root)) { continue }
     Get-ChildItem -Path $root -Recurse -Filter '*.log' | ForEach-Object {
-        $hits = Select-String -Path $_.FullName -Pattern $pattern | Select-Object -First 25
+        Note "log file $($_.FullName) ($($_.Length) bytes)"
+        $hits = Select-String -Path $_.FullName -Pattern $pattern | Where-Object { $_.Line -notmatch 'ipc connection closed' } | Select-Object -First 12
         foreach ($h in $hits) {
             $line = $h.Line -replace '[A-Za-z0-9+/]{40,}={0,2}', '(long value hidden)'
-            Note "$($_.Directory.Name)/$($_.Name): $line"
+            if ($line.Length -gt 240) { $line = $line.Substring(0, 240) + ' ...' }
+            Note "  $line"
         }
     }
 }

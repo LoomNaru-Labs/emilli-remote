@@ -134,6 +134,17 @@ function Run($c) {
             [SL]::Click([bool]$c.right)
             return "clicked $(if ($c.right) { 'right' } else { 'left' }) at $(([SL]::Cursor()) -join ',')"
         }
+        'lang' {
+            # The app's own language option for this user (RustDesk_local.toml), Windows unchanged.
+            $f = Join-Path $env:APPDATA 'RustDesk\config\RustDesk_local.toml'
+            New-Item -ItemType Directory -Force -Path (Split-Path $f) | Out-Null
+            $text = if (Test-Path $f) { [System.IO.File]::ReadAllText($f) } else { '' }
+            if ($text -match "(?m)^lang\s*=") { $text = $text -replace "(?m)^lang\s*=.*$", "lang = '$($c.lang)'" }
+            elseif ($text -match "(?m)^\[options\]\s*$") { $text = $text -replace "(?m)^\[options\]\s*$", "[options]`nlang = '$($c.lang)'" }
+            else { $text = $text.TrimEnd() + "`n`n[options]`nlang = '$($c.lang)'`n" }
+            [System.IO.File]::WriteAllText($f, $text, (New-Object System.Text.UTF8Encoding($false)))
+            return "lang '$($c.lang)' in $f"
+        }
         'rec-start' {
             $clip = [SL]::Clip($state.Remote)
             [SL]::RecordStart($clip[0], $clip[1], $clip[2], $clip[3], [int]$c.fps, $c.dir)

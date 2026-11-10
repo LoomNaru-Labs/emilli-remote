@@ -32,13 +32,15 @@ env:
 
 jobs:
   session:
-    name: Connected session (${{ matrix.set }})
+    name: Connected session (${{ matrix.set }}, ${{ matrix.lang }})
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         set: [office, store]
+        # The app's own language; Windows stays English. The recordings come from the en jobs.
+        lang: [en, ko]
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -74,13 +76,13 @@ jobs:
 
       - name: Connected session
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-session.ps1 -Set ${{ matrix.set }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-session.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} ${{ matrix.lang == 'en' && '-Record' || '' }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
 
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: session-${{ matrix.set }}
+          name: session-${{ matrix.set }}-${{ matrix.lang }}
           path: ${{ runner.temp }}/session
           retention-days: ${{ env.RETENTION_DAYS }}
           if-no-files-found: warn
