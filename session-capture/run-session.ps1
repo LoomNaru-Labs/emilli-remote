@@ -418,7 +418,7 @@ $recStore = Join-Path $Shots "rec-$base-controlled"
 if ($Record) {
     [SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
     Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps } 20 | Out-Null
-    Start-Sleep -Milliseconds 600
+    Start-Sleep -Milliseconds 2000
 }
 $markA = Now-Ms
 # The job row: the first row of the queue's list, just under its column headers.
@@ -453,8 +453,13 @@ $markB = Now-Ms
 Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed$Tag"; screen = $true } 30 | Out-Null
 Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed$Tag.png")))"
 Note "fix from the first move to the fixed state: $($markB - $markA) ms"
+# The videos are cut to about 11 s around the fix: the same still time before the first move
+# and after the fixed state (at least 0.3 s each).
+$pad = [Math]::Max(300, [int]((11000 - ($markB - $markA)) / 2))
+Note "video cut: $pad ms before the first move and after the fixed state"
 if ($Record) {
-    Start-Sleep -Milliseconds 600
+    $tail = $markB + $pad + 300 - (Now-Ms)
+    if ($tail -gt 0) { Start-Sleep -Milliseconds $tail }
     Ask @{ op = 'rec-stop' } 120 | Out-Null
     Note "store PC recording: $([SL]::RecordStop())"
 }
@@ -492,7 +497,7 @@ foreach ($rec in @(@($recHelper, "$base-05-fix-controller"), @($recStore, "$base
     # Cut to the fix: half a second before the first move until half a second after the
     # fixed state (wall-clock marks mapped onto this recording's own frame times).
     $start = [int64](Get-Content (Join-Path $rec[0] 'start.txt'))
-    $cutFrom = $markA - $start - 500; $cutTo = $markB - $start + 500
+    $cutFrom = $markA - $start - $pad; $cutTo = $markB - $start + $pad
     $sel = @($times | Where-Object { [int64]$_.ms -ge $cutFrom -and [int64]$_.ms -le $cutTo })
     if ($sel.Count -lt 2) { $sel = $times }
     $first = [int]$sel[0].frame; $count = $sel.Count; $last = $first + $count - 1
