@@ -178,6 +178,6 @@ while ((Get-Date) -lt $deadline) {
         if ($c.op -eq 'quit') { $quit = $true }
     }
     if ($quit) { break }
-    Start-Sleep -Milliseconds 40
+    Start-Sleep -Milliseconds 90
 }
 Log 'agent end'

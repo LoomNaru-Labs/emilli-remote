@@ -125,7 +125,7 @@ function Ask([hashtable] $C, [int] $Timeout = 60) {
             if (-not $a.ok) { throw "helper $($C.op) failed: $($a.result)" }
             return $a.result
         }
-        Start-Sleep -Milliseconds 40
+        Start-Sleep -Milliseconds 90
     }
     throw "the helper did not answer $name within $Timeout s"
 }
@@ -445,13 +445,13 @@ Helper-Click
 $nr = [SL]::Info($Notepad.Hwnd)
 Helper-Point ($nr.Left + 420) ($nr.Top + 300) 900
 Helper-Click
-$empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40 200
+$empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40 400
 Note "queue after the fix: $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue).Count) job(s)"
 if (-not $empty) { throw 'the job did not go away' }
 Start-Sleep -Milliseconds 1000
+$markB = Now-Ms
 Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed$Tag"; screen = $true } 30 | Out-Null
 Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed$Tag.png")))"
-$markB = Now-Ms
 Note "fix from the first move to the fixed state: $($markB - $markA) ms"
 if ($Record) {
     Start-Sleep -Milliseconds 600
@@ -496,11 +496,22 @@ foreach ($rec in @(@($recHelper, "$base-05-fix-controller"), @($recStore, "$base
     $sel = @($times | Where-Object { [int64]$_.ms -ge $cutFrom -and [int64]$_.ms -le $cutTo })
     if ($sel.Count -lt 2) { $sel = $times }
     $first = [int]$sel[0].frame; $count = $sel.Count; $last = $first + $count - 1
-    Note "$($rec[1]): kept frames $first to $last ($count frames, $([Math]::Round($count / [double]$Fps, 2)) s at $Fps fps)"
+    Note "$($rec[1]): kept frames $first to $last ($count frames over $([int64]$sel[$count - 1].ms - [int64]$sel[0].ms) ms)"
     if ($ff) {
+        # Each frame keeps its real capture time (concat list with durations), written out at a
+        # constant $Fps fps, so the video plays at real speed even when a grab came late.
+        $list = @('ffconcat version 1.0')
+        for ($i = 0; $i -lt $sel.Count; $i++) {
+            $dur = if ($i + 1 -lt $sel.Count) { ([int64]$sel[$i + 1].ms - [int64]$sel[$i].ms) / 1000.0 } else { 1.0 / $Fps }
+            $list += ("file 'frame-{0:D5}.png'" -f [int]$sel[$i].frame)
+            $list += ('duration {0}' -f $dur.ToString([Globalization.CultureInfo]::InvariantCulture))
+        }
+        $list += ("file 'frame-{0:D5}.png'" -f [int]$sel[$sel.Count - 1].frame)
+        $listPath = Join-Path $rec[0] 'list.ffconcat'
+        Set-Content -Path $listPath -Value $list -Encoding ASCII
         $mkv = Join-Path $Shots "$($rec[1]).mkv"
-        cmd /c "`"$ff`" -hide_banner -loglevel error -y -framerate $Fps -start_number $first -i `"$($rec[0])\frame-%05d.png`" -frames:v $count -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
-        if (Test-Path $mkv) { Note "video $($rec[1]).mkv $((Get-Item $mkv).Length) bytes" }
+        cmd /c "`"$ff`" -hide_banner -loglevel error -y -f concat -safe 0 -i `"$listPath`" -fps_mode cfr -r $Fps -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
+        if (Test-Path $mkv) { Note "video $($rec[1]).mkv $((Get-Item $mkv).Length) bytes, real time $(([int64]$sel[$sel.Count - 1].ms - [int64]$sel[0].ms + 50) / 1000.0) s" }
     }
     # Sample frames for checking the video by eye (debug folder only).
     foreach ($k in @($first, [int](($first + $last) / 2), $last)) {
