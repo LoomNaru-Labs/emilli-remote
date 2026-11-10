@@ -299,6 +299,56 @@ public static class SL {
         return sb.ToString();
     }
 
+    // Lossless frame recording of a screen region: one thread grabs at a fixed rate, three
+    // threads write the PNGs, frames.csv keeps each frame's real time in milliseconds.
+    static Thread recThread;
+    static volatile bool recStop;
+    static int recFrames, recLate;
+    public static void RecordStart(int x, int y, int w, int h, int fps, string dir) {
+        recStop = false; recFrames = 0; recLate = 0;
+        System.IO.Directory.CreateDirectory(dir);
+        recThread = new Thread(delegate() {
+            Aware();
+            var queue = new System.Collections.Concurrent.BlockingCollection<KeyValuePair<int, Bitmap>>(400);
+            Thread[] writers = new Thread[3];
+            for (int k = 0; k < writers.Length; k++) {
+                writers[k] = new Thread(delegate() {
+                    foreach (KeyValuePair<int, Bitmap> f in queue.GetConsumingEnumerable()) {
+                        f.Value.Save(System.IO.Path.Combine(dir, string.Format("frame-{0:D5}.png", f.Key)), ImageFormat.Png);
+                        f.Value.Dispose();
+                    }
+                });
+                writers[k].Start();
+            }
+            StringBuilder times = new StringBuilder("frame,ms\n");
+            Stopwatch sw = Stopwatch.StartNew();
+            double step = 1000.0 / fps;
+            int i = 0;
+            while (!recStop) {
+                double due = i * step;
+                double now = sw.Elapsed.TotalMilliseconds;
+                if (now < due) { Thread.Sleep((int)Math.Max(1, due - now)); continue; }
+                if (now - due > step) recLate++;
+                Bitmap b = Grab(x, y, w, h);
+                times.Append(i).Append(',').Append((long)sw.Elapsed.TotalMilliseconds).Append('\n');
+                queue.Add(new KeyValuePair<int, Bitmap>(i, b));
+                i++;
+            }
+            queue.CompleteAdding();
+            foreach (Thread t in writers) t.Join();
+            recFrames = i;
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "frames.csv"), times.ToString());
+        });
+        recThread.IsBackground = true;
+        recThread.Start();
+    }
+
+    public static string RecordStop() {
+        recStop = true;
+        if (recThread != null) recThread.Join();
+        return recFrames + " frames, " + recLate + " late";
+    }
+
     // Plain-colour desktop, no picture.
     public static void PlainDesktop(int red, int green, int blue) {
         SetSysColors(1, new int[] { 1 }, new int[] { red | (green << 8) | (blue << 16) });

@@ -68,6 +68,11 @@ function New-Secret([int] $Length) {
     return -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
 }
 
+# Creates a registry key only when it is missing (New-Item -Force would empty an existing key).
+function Ensure-Key([string] $Path) {
+    if (-not (Test-Path $Path)) { New-Item -Path $Path -Force | Out-Null }
+}
+
 function Debug-Shot([string] $Name) {
     try { [SL]::ShotScreen((Join-Path $Debug "console-$Name.png")) | Out-Null } catch { Note "debug shot $Name failed: $($_.Exception.Message)" }
 }
@@ -141,26 +146,26 @@ Add-LocalGroupMember -Group 'Remote Desktop Users' -Member $HelperUser
 icacls $Dir /grant "${HelperUser}:(OI)(CI)M" /T /Q | Out-Null
 Set-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
 Start-Service TermService -ErrorAction SilentlyContinue
-New-Item -Path 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Force | Out-Null
+Ensure-Key 'HKLM:\SOFTWARE\Microsoft\ServerManager'
 Set-ItemProperty 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name DoNotOpenServerManagerAtLogon -Value 1 -Type DWord
 Get-ScheduledTask -TaskName 'ServerManager' -ErrorAction SilentlyContinue | Disable-ScheduledTask -ErrorAction SilentlyContinue | Out-Null
 # Saved credentials may be used for this loopback connection (local account, NTLM only).
 $cd = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation'
-New-Item -Path $cd -Force | Out-Null
+Ensure-Key $cd
 foreach ($pair in @(@('AllowSavedCredentials', 'ConcatenateDefaults_AllowSaved'), @('AllowSavedCredentialsWhenNTLMOnly', 'ConcatenateDefaults_AllowSavedNTLMOnly'))) {
     Set-ItemProperty $cd -Name $pair[0] -Value 1 -Type DWord
     Set-ItemProperty $cd -Name $pair[1] -Value 1 -Type DWord
-    New-Item -Path "$cd\$($pair[0])" -Force | Out-Null
+    Ensure-Key "$cd\$($pair[0])"
     Set-ItemProperty "$cd\$($pair[0])" -Name '1' -Value 'TERMSRV/*'
 }
 $tsc = 'HKCU:\Software\Microsoft\Terminal Server Client'
-New-Item -Path $tsc -Force | Out-Null
+Ensure-Key $tsc
 Set-ItemProperty $tsc -Name AuthenticationLevelOverride -Value 0 -Type DWord
 Set-ItemProperty $tsc -Name RemoteDesktop_SuppressWhenMinimized -Value 2 -Type DWord
 cmdkey "/generic:TERMSRV/127.0.0.2" "/user:$env:COMPUTERNAME\$HelperUser" "/pass:$helperPw" | Out-Null
 
 function Helper-SessionId {
-    foreach ($line in (qwinsta 2>$null)) {
+    foreach ($line in (cmd /c "qwinsta 2>nul")) {
         if ($line -match "\s$HelperUser\s+(\d+)\s+Active") { return [int]$Matches[1] }
     }
     return $null
@@ -206,7 +211,7 @@ if (-not $sid) {
 $helperPw = $null
 if (-not $sid) { Debug-Shot 'rdp-failed'; qwinsta; throw 'the helper session did not start' }
 Note "helper session $sid is signed in"
-qwinsta | ForEach-Object { Note $_ }
+cmd /c "qwinsta 2>nul" | ForEach-Object { Note $_ }
 Start-Sleep -Seconds 8
 foreach ($w in [SL]::Windows()) {
     if ($w.Proc -eq 'mstsc' -and $w.Cls -eq 'TscShellContainerClass') {
@@ -230,7 +235,7 @@ Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -Value ''
 Set-ItemProperty 'HKCU:\Control Panel\Colors' -Name Background -Value ($Wall -join ' ')
 [SL]::PlainDesktop($Wall[0], $Wall[1], $Wall[2])
 Note "desktop icons hidden: $([SL]::HideDesktopIcons())"
-New-Item -Path 'HKCU:\Software\Microsoft\Notepad' -Force | Out-Null
+Ensure-Key 'HKCU:\Software\Microsoft\Notepad'
 Set-ItemProperty 'HKCU:\Software\Microsoft\Notepad' -Name iPointSize -Value 160 -Type DWord
 Set-ItemProperty 'HKCU:\Software\Microsoft\Notepad' -Name lfFaceName -Value 'Consolas'
 Set-ItemProperty 'HKCU:\Software\Microsoft\Notepad' -Name StatusBar -Value 0 -Type DWord
@@ -395,7 +400,7 @@ Copy-Item -Force "$Shots\*.png" $Out
 Copy-Item -Force "$Dir\out\agent.log" $Debug -ErrorAction SilentlyContinue
 Remove-Item -Force -Recurse "$Dir\secret" -ErrorAction SilentlyContinue
 cmdkey "/delete:TERMSRV/127.0.0.2" | Out-Null
-logoff $sid 2>$null
+cmd /c "logoff $sid 2>nul"
 Start-Sleep -Seconds 5
 Remove-LocalUser -Name $HelperUser -ErrorAction SilentlyContinue
 Note "throwaway user removed: $(-not (Get-LocalUser -Name $HelperUser -ErrorAction SilentlyContinue))"
