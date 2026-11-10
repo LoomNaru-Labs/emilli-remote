@@ -23,7 +23,7 @@ try {
     throw
 }
 
-$state = @{ Remote = [IntPtr]::Zero; Left = 0; Top = 0; Scale = 1.0; W = 1920; H = 1080 }
+$state = @{ Remote = [IntPtr]::Zero; Left = 0; Top = 0; Scale = 1.0; W = 1920; H = 1080; CropLeft = 0; CropTop = 0 }
 
 function RustDeskWindows {
     $mine = [SL]::MySession()
@@ -94,23 +94,26 @@ function Run($c) {
             $box = [SL]::ColorBox($clip[0], $clip[1], $clip[2], $clip[3], [int]$c.r, [int]$c.g, [int]$c.b, [int]$c.tol)
             if ($box[4] -eq 0) {
                 # First guess only; run-session.ps1 measures the real place with pointer moves.
-                $state.Left = $clip[0]; $state.Top = $clip[1] + 120; $state.Scale = 1.0; $state.W = [int]$c.rw; $state.H = [int]$c.rh
+                $state.Left = $clip[0]; $state.Top = $clip[1] + 32; $state.Scale = 1.0; $state.W = [int]$c.rw; $state.H = [int]$c.rh
+                $state.CropLeft = $state.Left; $state.CropTop = $state.Top
                 return "wallpaper colour not found in the session window $($clip -join ','); first guess $($state.Left),$($state.Top)"
             }
             $w = $box[2] - $box[0] + 1
             $scale = $w / [double]$c.rw
             if ([Math]::Abs($scale - 1.0) -lt 0.004) { $scale = 1.0 }
             $state.Left = $box[0]; $state.Top = $box[1]; $state.Scale = $scale; $state.W = [int]$c.rw; $state.H = [int]$c.rh
+            $state.CropLeft = $box[0]; $state.CropTop = $box[1]
             $nb = [SL]::NonBlack($box[0], $box[1], [int]($c.rw * $scale), [int]($c.rh * $scale))
             return "window $($clip -join ','); wallpaper box $($box[0]),$($box[1]) to $($box[2]),$($box[3]) ($($box[4]) px); picture at $($box[0]),$($box[1]) scale $scale; not black $nb/1000"
         }
         'calib' {
+            # Pointer mapping only; the crop keeps the picture edges found by 'locate'.
             $state.Left = [double]$c.left; $state.Top = [double]$c.top; $state.Scale = [double]$c.scale
-            return "picture at $($state.Left),$($state.Top) scale $($state.Scale)"
+            return "pointer mapping: picture at $($state.Left),$($state.Top) scale $($state.Scale); crop at $($state.CropLeft),$($state.CropTop)"
         }
         'shot' {
             $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
-            $x0 = [int][Math]::Round($state.Left); $y0 = [int][Math]::Round($state.Top)
+            $x0 = [int]$state.CropLeft; $y0 = [int]$state.CropTop
             $a = Join-Path $c.dir "$($c.name).png"
             $b = Join-Path $c.dir "$($c.name)-remote-only.png"
             $r = [SL]::ShotWindowAndRegion($state.Remote, $a, $x0, $y0, $w, $h, $b)

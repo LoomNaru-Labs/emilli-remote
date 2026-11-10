@@ -329,7 +329,8 @@ Ask @{ op = 'tidy' } 20 | Out-Null
 # The session view fits the remote screen to the window, so a window whose picture area is
 # exactly 1920 pixels wide (visible frame 1920; 7 invisible border pixels on each side) shows
 # the store PC's 1920x1080 screen at 1:1.
-Ask @{ op = 'place'; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 170) } 20 | Out-Null
+# Below the 30-pixel tab bar the picture area is centred; 4 spare pixels keep the fit at 1:1.
+Ask @{ op = 'place'; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 20 | Out-Null
 Start-Sleep -Seconds 2
 Ask @{ op = 'screen'; dir = $Shots; name = 'debug-helper-after-place' } 20 | Out-Null
 Copy-Item -Force "$Shots\debug-helper-after-place.png" $Debug -ErrorAction SilentlyContinue
@@ -340,8 +341,8 @@ Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $
 # that the helper's mouse moves the store PC's pointer.
 Step 'Calibrate the picture with real pointer moves through the session'
 $obs = @()
-foreach ($p in @(@(420, 300), @(1560, 860), @(960, 540))) {
-    $res = Ask @{ op = 'move'; rx = $p[0]; ry = $p[1]; ms = 500 } 30
+foreach ($pt in @(@(420, 300), @(1560, 860), @(960, 540))) {
+    $res = Ask @{ op = 'move'; rx = $pt[0]; ry = $pt[1]; ms = 500 } 30
     Start-Sleep -Milliseconds 900
     $c = [SL]::Cursor()
     $m = [regex]::Match($res, 'helper screen (-?\d+),(-?\d+)')
@@ -363,6 +364,18 @@ Note "check: asked 960,540 -> store PC pointer at $($c[0]),$($c[1])"
 
 # ---------------------------------------------------------------- 5. pictures and the fix
 $base = "session-$Set"
+# The runner's own Windows notices (such as the temporary paging file message) are closed;
+# they are not part of the staged scene.
+foreach ($w in [SL]::Windows()) {
+    if ($w.Cls -eq '#32770' -and [SL]::SessionOf($w.Pid) -eq [SL]::MySession()) {
+        $texts = [SL]::ChildTexts($w.Hwnd)
+        Note "dialog on the store PC: $w $texts"
+        if ($texts -match 'paging file') { Note "  closed: $([SL]::ClickButton($w.Hwnd, 'OK'))" }
+    }
+}
+foreach ($w in [SL]::Windows()) {
+    if ($w.Proc -like 'rustdesk*' -and $w.Width -gt 50) { Note "Emilli Remote window on the store PC: $w" }
+}
 [SL]::Front($Queue.Hwnd)
 Start-Sleep -Seconds 2
 Helper-Point 1500 760 700
