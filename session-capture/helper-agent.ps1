@@ -92,7 +92,11 @@ function Run($c) {
             # edges, so its picture inside the session window is the box of that colour.
             $clip = [SL]::Clip($state.Remote)
             $box = [SL]::ColorBox($clip[0], $clip[1], $clip[2], $clip[3], [int]$c.r, [int]$c.g, [int]$c.b, [int]$c.tol)
-            if ($box[4] -eq 0) { throw "wallpaper colour not found in the session window $($clip -join ',')" }
+            if ($box[4] -eq 0) {
+                # First guess only; run-session.ps1 measures the real place with pointer moves.
+                $state.Left = $clip[0]; $state.Top = $clip[1] + 120; $state.Scale = 1.0; $state.W = [int]$c.rw; $state.H = [int]$c.rh
+                return "wallpaper colour not found in the session window $($clip -join ','); first guess $($state.Left),$($state.Top)"
+            }
             $w = $box[2] - $box[0] + 1
             $scale = $w / [double]$c.rw
             if ([Math]::Abs($scale - 1.0) -lt 0.004) { $scale = 1.0 }
@@ -100,12 +104,17 @@ function Run($c) {
             $nb = [SL]::NonBlack($box[0], $box[1], [int]($c.rw * $scale), [int]($c.rh * $scale))
             return "window $($clip -join ','); wallpaper box $($box[0]),$($box[1]) to $($box[2]),$($box[3]) ($($box[4]) px); picture at $($box[0]),$($box[1]) scale $scale; not black $nb/1000"
         }
+        'calib' {
+            $state.Left = [double]$c.left; $state.Top = [double]$c.top; $state.Scale = [double]$c.scale
+            return "picture at $($state.Left),$($state.Top) scale $($state.Scale)"
+        }
         'shot' {
             $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
+            $x0 = [int][Math]::Round($state.Left); $y0 = [int][Math]::Round($state.Top)
             $a = Join-Path $c.dir "$($c.name).png"
             $b = Join-Path $c.dir "$($c.name)-remote-only.png"
-            $r = [SL]::ShotWindowAndRegion($state.Remote, $a, $state.Left, $state.Top, $w, $h, $b)
-            $nb = [SL]::NonBlack($state.Left, $state.Top, $w, $h)
+            $r = [SL]::ShotWindowAndRegion($state.Remote, $a, $x0, $y0, $w, $h, $b)
+            $nb = [SL]::NonBlack($x0, $y0, $w, $h)
             if ($c.screen) { [SL]::ShotScreen((Join-Path $c.dir "$($c.name)-helper-screen.png")) | Out-Null }
             return "$($c.name): $r; remote picture not black $nb/1000"
         }
@@ -122,6 +131,12 @@ function Run($c) {
             [SL]::Click([bool]$c.right)
             return "clicked $(if ($c.right) { 'right' } else { 'left' }) at $(([SL]::Cursor()) -join ',')"
         }
+        'rec-start' {
+            $clip = [SL]::Clip($state.Remote)
+            [SL]::RecordStart($clip[0], $clip[1], $clip[2], $clip[3], [int]$c.fps, $c.dir)
+            return "recording the session window $($clip -join ',') at $($c.fps) fps"
+        }
+        'rec-stop' { return [SL]::RecordStop() }
         'sleep' { Start-Sleep -Milliseconds ([int]$c.ms); return 'slept' }
         'quit' { return 'bye' }
         default { throw "unknown op $($c.op)" }

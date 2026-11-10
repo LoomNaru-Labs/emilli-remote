@@ -290,6 +290,71 @@ public static class SL {
         return n;
     }
 
+    // Screen rectangle (left, top, right, bottom) of the first visible child window of a class.
+    public static int[] ChildRect(IntPtr parent, string cls) {
+        Aware();
+        int[] found = null;
+        EnumChildWindows(parent, new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (found == null && IsWindowVisible(h) && ClassOf(h) == cls) {
+                RECT r; GetWindowRect(h, out r); found = new int[] { r.Left, r.Top, r.Right, r.Bottom };
+            }
+            return true;
+        }), IntPtr.Zero);
+        return found;
+    }
+
+    [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] static extern int GetMenuItemCount(IntPtr menu);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern int GetMenuString(IntPtr menu, uint item, StringBuilder s, int n, uint flags);
+    [DllImport("user32.dll")] static extern bool GetMenuItemRect(IntPtr h, IntPtr menu, uint item, out RECT r);
+
+    // An open pop-up menu's item whose text starts with the given word: its screen rectangle
+    // and the texts of all items, for the log.
+    public static int[] MenuItemRect(string word, out string texts) {
+        Aware();
+        texts = "";
+        int[] found = null;
+        IntPtr menuWnd = FindWindowEx(IntPtr.Zero, IntPtr.Zero, "#32768", null);
+        while (menuWnd != IntPtr.Zero) {
+            if (IsWindowVisible(menuWnd)) {
+                IntPtr menu = SendMessage(menuWnd, 0x01E1, IntPtr.Zero, IntPtr.Zero);
+                int n = GetMenuItemCount(menu);
+                for (int i = 0; i < n; i++) {
+                    StringBuilder s = new StringBuilder(256);
+                    GetMenuString(menu, (uint)i, s, 256, 0x400);
+                    string t = s.ToString().Replace("&", "");
+                    texts += "[" + t + "] ";
+                    RECT r;
+                    if (found == null && t.StartsWith(word, StringComparison.OrdinalIgnoreCase) && GetMenuItemRect(menuWnd, menu, (uint)i, out r))
+                        found = new int[] { r.Left, r.Top, r.Right, r.Bottom };
+                }
+            }
+            menuWnd = FindWindowEx(IntPtr.Zero, menuWnd, "#32768", null);
+        }
+        return found;
+    }
+
+    // A button with this caption in any visible dialog box (class #32770): its screen rectangle.
+    public static int[] DialogButtonRect(string caption, out string dialog) {
+        Aware();
+        dialog = "";
+        int[] found = null;
+        string d = "";
+        EnumWindows(new EnumProc(delegate(IntPtr top, IntPtr l) {
+            if (found != null || !IsWindowVisible(top) || ClassOf(top) != "#32770") return true;
+            EnumChildWindows(top, new EnumProc(delegate(IntPtr h, IntPtr l2) {
+                if (found == null && IsWindowVisible(h) && ClassOf(h) == "Button" && TitleOf(h).Replace("&", "") == caption) {
+                    RECT r; GetWindowRect(h, out r); found = new int[] { r.Left, r.Top, r.Right, r.Bottom };
+                    d = "'" + TitleOf(top) + "' " + ChildTexts(top);
+                }
+                return true;
+            }), IntPtr.Zero);
+            return true;
+        }), IntPtr.Zero);
+        dialog = d;
+        return found;
+    }
+
     public static string ChildTexts(IntPtr parent) {
         StringBuilder sb = new StringBuilder();
         EnumChildWindows(parent, new EnumProc(delegate(IntPtr h, IntPtr l) {

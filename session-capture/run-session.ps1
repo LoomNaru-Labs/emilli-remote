@@ -28,6 +28,7 @@ $SvcRoot = 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\RustDesk'
 $HelperUser = 'Helper'
 $Wall = @(38, 84, 124)
 $Peer = '127.0.0.1'
+$Fps = 20
 
 $Props = @{
     office = @{
@@ -75,6 +76,14 @@ function Ensure-Key([string] $Path) {
 
 function Debug-Shot([string] $Name) {
     try { [SL]::ShotScreen((Join-Path $Debug "console-$Name.png")) | Out-Null } catch { Note "debug shot $Name failed: $($_.Exception.Message)" }
+}
+
+trap {
+    Write-Host "FAILED: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"
+    Debug-Shot 'failure'
+    Copy-Item -Force "$Shots\*.png" $Debug -ErrorAction SilentlyContinue
+    Copy-Item -Force "$Dir\out\agent.log" $Debug -ErrorAction SilentlyContinue
+    break
 }
 
 New-Item -ItemType Directory -Force -Path $Out, $Debug, $Dir, "$Dir\bin", "$Dir\cmd", "$Dir\done", "$Dir\tmp", "$Dir\out", $Shots, "$Dir\secret" | Out-Null
@@ -317,10 +326,40 @@ Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | ForEach-Object {
 }
 Start-Sleep -Seconds 3
 Ask @{ op = 'tidy' } 20 | Out-Null
-Ask @{ op = 'place'; x = 40; y = 30; w = 2060; h = 1290 } 20 | Out-Null
+# The session view fits the remote screen to the window, so a window whose picture area is
+# exactly 1920 pixels wide (visible frame 1920; 7 invisible border pixels on each side) shows
+# the store PC's 1920x1080 screen at 1:1.
+Ask @{ op = 'place'; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 170) } 20 | Out-Null
 Start-Sleep -Seconds 2
 Ask @{ op = 'screen'; dir = $Shots; name = 'debug-helper-after-place' } 20 | Out-Null
+Copy-Item -Force "$Shots\debug-helper-after-place.png" $Debug -ErrorAction SilentlyContinue
 Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 30 | Out-Null
+
+# Calibration through the session itself: the helper's pointer goes to two points of the
+# picture and the store PC reports where its own pointer landed. This also shows in the log
+# that the helper's mouse moves the store PC's pointer.
+Step 'Calibrate the picture with real pointer moves through the session'
+$obs = @()
+foreach ($p in @(@(420, 300), @(1560, 860), @(960, 540))) {
+    $res = Ask @{ op = 'move'; rx = $p[0]; ry = $p[1]; ms = 500 } 30
+    Start-Sleep -Milliseconds 900
+    $c = [SL]::Cursor()
+    $m = [regex]::Match($res, 'helper screen (-?\d+),(-?\d+)')
+    $obs += , @([int]$m.Groups[1].Value, [int]$m.Groups[2].Value, $c[0], $c[1])
+    Note "helper pointer at $($m.Groups[1].Value),$($m.Groups[2].Value) -> store PC pointer at $($c[0]),$($c[1])"
+}
+$dx = $obs[1][2] - $obs[0][2]; $dy = $obs[1][3] - $obs[0][3]
+if ([Math]::Abs($dx) -lt 100 -or [Math]::Abs($dy) -lt 100) { throw "the store PC pointer did not follow the helper's mouse ($dx, $dy)" }
+$sx = ($obs[1][0] - $obs[0][0]) / [double]$dx
+$sy = ($obs[1][1] - $obs[0][1]) / [double]$dy
+$left = $obs[0][0] - $obs[0][2] * $sx
+$top = $obs[0][1] - $obs[0][3] * $sy
+Note ("measured: picture at {0:N1},{1:N1}, scale {2:N4} across, {3:N4} down" -f $left, $top, $sx, $sy)
+Ask @{ op = 'calib'; left = $left; top = $top; scale = $sx } 20 | Out-Null
+Helper-Point 960 540 400
+Start-Sleep -Milliseconds 900
+$c = [SL]::Cursor()
+Note "check: asked 960,540 -> store PC pointer at $($c[0]),$($c[1])"
 
 # ---------------------------------------------------------------- 5. pictures and the fix
 $base = "session-$Set"
@@ -332,42 +371,30 @@ Ask @{ op = 'shot'; dir = $Shots; name = "$base-01-controller-problem"; screen =
 Note "controlled screen: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen.png")))"
 Note "queue before the fix: $(@(Get-PrintJob -PrinterName $P.Printer).Count) job(s), status '$((Get-PrintJob -PrinterName $P.Printer)[0].JobStatus)'"
 
-Step 'The helper cancels the stuck job through the session (real mouse input)'
-$qa = $A::FromHandle($Queue.Hwnd)
-$item = $null
-foreach ($e in $qa.FindAll($TS::Descendants, [System.Windows.Automation.Condition]::TrueCondition)) {
-    $t = $e.Current.ControlType
-    if (($t -eq $CT::DataItem -or $t -eq $CT::ListItem) -and $e.Current.Name -like "*$($P.Doc)*") { $item = $e; break }
-}
-if (-not $item) { throw 'the job row was not found in the queue window' }
-$r = $item.Current.BoundingRectangle
-Note "job row at $($r.X),$($r.Y) size $($r.Width)x$($r.Height)"
-Helper-Point ([int]($r.X + 90)) ([int]($r.Y + $r.Height / 2)) 1100
+Step 'The helper cancels the stuck job through the session (real mouse input), recorded on both PCs'
+$recHelper = Join-Path $Shots "rec-$base-controller"
+$recStore = Join-Path $Shots "rec-$base-controlled"
+[SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
+Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps } 20 | Out-Null
+Start-Sleep -Milliseconds 1200
+# The job row: the first row of the queue's list, just under its column headers.
+$lv = [SL]::ChildRect($Queue.Hwnd, 'SysListView32')
+$hd = [SL]::ChildRect($Queue.Hwnd, 'SysHeader32')
+if (-not $lv -or -not $hd) { throw "the queue's list was not found: $([SL]::ChildTexts($Queue.Hwnd))" }
+Note "queue list at $($lv -join ','), column headers at $($hd -join ',')"
+Helper-Point ($lv[0] + 90) ($hd[3] + 11) 1100
 Helper-Click -Right
-$menuItem = Wait-Until {
-    foreach ($m in $A::RootElement.FindAll($TS::Children, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::Menu)))) {
-        foreach ($i in $m.FindAll($TS::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::MenuItem)))) {
-            if (($i.Current.Name -replace '&', '') -like 'Cancel*') { return $i }
-        }
-    }
-} 8 250
-Debug-Shot 'menu'
-if (-not $menuItem) { throw 'the job menu did not open on the store PC' }
-$r = $menuItem.Current.BoundingRectangle
-Note "menu item '$($menuItem.Current.Name)' at $($r.X),$($r.Y)"
-Helper-Point ([int]($r.X + 30)) ([int]($r.Y + $r.Height / 2)) 600
+$menuTexts = ''
+$mi = Wait-Until { [SL]::MenuItemRect('Cancel', [ref]$menuTexts) } 8 250
+Note "menu on the store PC: $menuTexts"
+if (-not $mi) { Debug-Shot 'menu-missing'; throw 'the job menu did not open on the store PC' }
+Helper-Point ($mi[0] + 30) ([int](($mi[1] + $mi[3]) / 2)) 600
 Helper-Click
-$yes = Wait-Until {
-    foreach ($w in $A::RootElement.FindAll($TS::Children, (New-Object System.Windows.Automation.PropertyCondition($A::ClassNameProperty, '#32770')))) {
-        foreach ($b in $w.FindAll($TS::Descendants, (New-Object System.Windows.Automation.PropertyCondition($A::ControlTypeProperty, $CT::Button)))) {
-            if (($b.Current.Name -replace '&', '') -eq 'Yes') { return $b }
-        }
-    }
-} 8 250
-Debug-Shot 'confirm'
-if (-not $yes) { throw 'the confirmation did not appear on the store PC' }
-$r = $yes.Current.BoundingRectangle
-Helper-Point ([int]($r.X + $r.Width / 2)) ([int]($r.Y + $r.Height / 2)) 700
+$dlgText = ''
+$yes = Wait-Until { [SL]::DialogButtonRect('Yes', [ref]$dlgText) } 8 250
+Note "dialog on the store PC: $dlgText"
+if (-not $yes) { Debug-Shot 'confirm-missing'; throw 'the confirmation did not appear on the store PC' }
+Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 700
 Helper-Click
 $empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40
 Note "queue after the fix: $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue).Count) job(s)"
@@ -379,6 +406,29 @@ Helper-Click
 Start-Sleep -Seconds 2
 Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed"; screen = $true } 30 | Out-Null
 Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed.png")))"
+Start-Sleep -Milliseconds 1000
+Ask @{ op = 'rec-stop' } 120 | Out-Null
+Note "store PC recording: $([SL]::RecordStop())"
+
+Step 'Lossless videos of the recordings (FFV1)'
+$ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+if (-not $ff) {
+    choco install ffmpeg -y --no-progress --limit-output | Out-Null
+    $ff = (Get-Command ffmpeg -ErrorAction SilentlyContinue).Source
+    if (-not $ff -and (Test-Path 'C:\ProgramData\chocolatey\bin\ffmpeg.exe')) { $ff = 'C:\ProgramData\chocolatey\bin\ffmpeg.exe' }
+}
+foreach ($rec in @(@($recHelper, "$base-05-fix-controller"), @($recStore, "$base-05-fix-controlled"))) {
+    $times = Import-Csv (Join-Path $rec[0] 'frames.csv')
+    $n = @($times).Count
+    $span = if ($n -gt 1) { [int]$times[$n - 1].ms - [int]$times[0].ms } else { 0 }
+    Note "$($rec[1]): $n frames over $span ms ($([Math]::Round(($n - 1) * 1000.0 / [Math]::Max(1, $span), 1)) fps measured)"
+    if ($ff) {
+        $mkv = Join-Path $Shots "$($rec[1]).mkv"
+        cmd /c "`"$ff`" -hide_banner -loglevel error -y -framerate $Fps -i `"$($rec[0])\frame-%05d.png`" -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
+        if (Test-Path $mkv) { Note "video $($rec[1]).mkv $((Get-Item $mkv).Length) bytes" }
+    }
+    Copy-Item -Force (Join-Path $rec[0] 'frames.csv') (Join-Path $Shots "$($rec[1])-frames.csv")
+}
 
 # ---------------------------------------------------------------- 6. evidence and clean-up
 Step 'Session evidence from the logs'
@@ -396,7 +446,7 @@ foreach ($root in @("$SvcRoot\log", "$env:APPDATA\RustDesk\log", "C:\Users\$Help
 Get-Content -Path "$Dir\out\agent.log" -ErrorAction SilentlyContinue | ForEach-Object { Note "agent: $_" }
 
 Ask @{ op = 'quit' } 20 | Out-Null
-Copy-Item -Force "$Shots\*.png" $Out
+Copy-Item -Force "$Shots\*.png", "$Shots\*.mkv", "$Shots\*.csv" $Out -ErrorAction SilentlyContinue
 Copy-Item -Force "$Dir\out\agent.log" $Debug -ErrorAction SilentlyContinue
 Remove-Item -Force -Recurse "$Dir\secret" -ErrorAction SilentlyContinue
 cmdkey "/delete:TERMSRV/127.0.0.2" | Out-Null
