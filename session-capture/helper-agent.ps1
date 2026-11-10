@@ -41,8 +41,10 @@ function Run($c) {
             return "session $([SL]::MySession()) user $env:USERNAME screen $($s[2])x$($s[3])"
         }
         'dpi' { return "screen DPI $([SL]::MonitorDpi())" }
-        # Windows' own pointer size for the helper user (Settings, Accessibility, Mouse pointer).
-        'pointer' { return [SL]::SetPointerSize([int]$c.size) }
+        # Windows' own pointer shapes at a larger size in the helper's session.
+        'pointer' { return [SL]::SetPointerPixels([int]$c.px) }
+        # The pointer shown now (over the session window: the store PC's pointer as the app draws it).
+        'cursor' { return "pointer now $([SL]::PointerPixels())" }
         'windows' {
             return (([SL]::Windows() | ForEach-Object { $_.ToString() }) -join "`n")
         }

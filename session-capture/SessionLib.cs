@@ -93,16 +93,37 @@ public static class SL {
     [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint f);
     [DllImport("gdi32.dll")] static extern int GetObject(IntPtr h, int n, out BITMAP b);
     [StructLayout(LayoutKind.Sequential)] struct BITMAP { public int bmType, bmWidth, bmHeight, bmWidthBytes; public ushort bmPlanes, bmBitsPixel; public IntPtr bmBits; }
-    public static string SetPointerSize(int size) {
-        int baseSize = 32 + 16 * (size - 1);
-        using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Control Panel\Cursors"))
-            k.SetValue("CursorBaseSize", baseSize, Microsoft.Win32.RegistryValueKind.DWord);
-        using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Accessibility"))
-            k.SetValue("CursorSize", size, Microsoft.Win32.RegistryValueKind.DWord);
-        bool a = SystemParametersInfo(0x2029, 0, new IntPtr(baseSize), 3);
-        bool b = SystemParametersInfo(0x0057, 0, IntPtr.Zero, 3);
-        Thread.Sleep(500);
-        return "pointer size " + size + " (base " + baseSize + " px; size call " + a + ", reload " + b + "), pointer now " + PointerPixels() + " px";
+    // Round 2 run 42812044340 showed that the accessibility size setting leaves the pointer
+    // bitmaps at 32 px for other programs; this replaces Windows' own pointer shapes for this
+    // session with Windows' own cursor files (C:\Windows\Cursors) loaded at px pixels, so every
+    // program, the app's capture included, gets the large pointer.
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadImage(IntPtr inst, string name, uint type, int cx, int cy, uint flags);
+    [DllImport("user32.dll")] static extern bool SetSystemCursor(IntPtr cursor, uint id);
+    [DllImport("user32.dll")] static extern IntPtr LoadCursor(IntPtr inst, IntPtr id);
+    public static string SetPointerPixels(int px) {
+        string dir = Environment.GetFolderPath(Environment.SpecialFolder.Windows) + @"\Cursors\";
+        string[][] map = {
+            new string[] { "32512", "aero_arrow_xl.cur", "aero_arrow.cur" },      // arrow
+            new string[] { "32649", "aero_link_xl.cur", "aero_link.cur" },        // hand
+            new string[] { "32513", "beam_rl.cur", "beam_r.cur" },                // text beam
+            new string[] { "32650", "aero_working_xl.ani", "aero_working.ani" },  // working in background
+            new string[] { "32514", "aero_busy_xl.ani", "aero_busy.ani" }         // busy
+        };
+        StringBuilder log = new StringBuilder();
+        foreach (string[] m in map) {
+            string used = null;
+            for (int i = 1; i < m.Length && used == null; i++) {
+                if (!System.IO.File.Exists(dir + m[i])) continue;
+                IntPtr c = LoadImage(IntPtr.Zero, dir + m[i], 2, px, px, 0x10);
+                if (c != IntPtr.Zero && SetSystemCursor(c, uint.Parse(m[0]))) used = m[i];
+            }
+            log.Append(m[0] + " " + (used ?? "not changed") + "; ");
+        }
+        return log.ToString() + "arrow now " + ArrowPixels();
+    }
+    public static string ArrowPixels() {
+        int[] wh = CursorSize(LoadCursor(IntPtr.Zero, new IntPtr(32512)));
+        return wh[0] + "x" + wh[1];
     }
     public static string PointerPixels() {
         Aware();

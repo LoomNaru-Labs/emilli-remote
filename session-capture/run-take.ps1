@@ -13,10 +13,10 @@
 # job cancelled, the document printed again on the printer that works. Stills come from the
 # recorded frames; the error screen is taken before the session, the good ending after it.
 #
-# Addendum 2: the store PC runs at -Scale percent (150 or 175) with a larger Windows pointer
-# (-PointerSize, Settings, Accessibility, Mouse pointer), and shows Windows' message box with the
-# red error icon in the middle of the screen (error-box.ps1); in the take the helper first clicks
-# OK on it and brings the old printer's queue forward.
+# Addendum 2: the store PC runs at -Scale percent (150 or 175) with Windows' own pointer shapes
+# at -PointerPx pixels on both PCs, and shows Windows' message box with the red error icon in
+# the middle of the screen (error-box.ps1); in the take the helper first clicks OK on it and
+# brings the old printer's queue forward.
 # Plain ASCII on purpose (Windows PowerShell 5.1).
 param(
     [Parameter(Mandatory)] [ValidateSet('office', 'store')] [string] $Set,
@@ -24,8 +24,9 @@ param(
     [Parameter(Mandatory)] [string] $Out,
     # The app's own language setting (Windows stays English); 'ko' adds -ko to every file name.
     [ValidateSet('en', 'ko')] [string] $Lang = 'en',
-    [ValidateSet(100, 125, 150, 175, 200)] [int] $Scale = 150,
-    [ValidateRange(1, 15)] [int] $PointerSize = 4,
+    [ValidateSet(100, 125, 150, 175, 200)] [int] $Scale = 175,
+    # 128 px: what Windows' pointer size 4 gives at 175 % is 140; at 100 % size 7 gives 128.
+    [ValidateRange(32, 256)] [int] $PointerPx = 128,
     [switch] $Record
 )
 $ErrorActionPreference = 'Stop'
@@ -258,20 +259,18 @@ Ask @{ op = 'hello' } 90 | Out-Null
 # Switched only now, with the helper's session already signed in at 100 %, so the helper's side
 # keeps its 1:1 picture; every window of the staged problem opens after the switch and draws at
 # the new scale. The app's own processes are per-monitor DPI aware (runner.exe.manifest).
-Step "The store PC at $Scale % with a larger pointer (size $PointerSize)"
+Step "The store PC at $Scale % with a larger pointer ($PointerPx px)"
 & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\windows-capture\capture-display.ps1') -Width $s[2] -Height $s[3] -Scale $Scale | ForEach-Object { Note $_ }
 $wantDpi = [int](96 * $Scale / 100)
 $dpiNow = Wait-Until { $d = [SL]::MonitorDpi(); if ($d -eq $wantDpi) { $d } } 15 500
 Note "store PC screen DPI now $([SL]::MonitorDpi()) (wanted $wantDpi); screen $(([SL]::Screen())[2])x$(([SL]::Screen())[3])"
 if (-not $dpiNow) { Debug-Shot 'scale-not-set'; throw "the store PC is not at $Scale %" }
-Note "store PC: $([SL]::SetPointerSize($PointerSize))"
+Note "store PC pointer: $([SL]::SetPointerPixels($PointerPx))"
 $helperDpi = Ask @{ op = 'dpi' } 20
 if ($helperDpi -notmatch 'DPI 96$') { throw "the helper's screen changed with the store PC ($helperDpi); its picture would not be 1:1" }
-# The helper's own pointer about as large in pixels as the store PC's, so it does not change
-# size where the session window begins (the helper's screen stays at 100 %).
-$pxNow = [regex]::Match([SL]::PointerPixels(), '^(\d+)x')
-$helperSize = if ($pxNow.Success) { [Math]::Max(1, [Math]::Min(15, [int][Math]::Round(([int]$pxNow.Groups[1].Value - 32) / 16.0) + 1)) } else { $PointerSize }
-Ask @{ op = 'pointer'; size = $helperSize } 20 | Out-Null
+# The helper's own pointer as large in pixels as the store PC's, so it keeps its size where the
+# session window begins.
+Ask @{ op = 'pointer'; px = $PointerPx } 20 | Out-Null
 
 # ---------------------------------------------------------------- 3. the staged problem on the store PC
 Step "Stage the problem on the store PC ($Set set)"
@@ -364,7 +363,7 @@ foreach ($w in $found) { Note "window DPI $([SL]::WindowDpi($w.Hwnd)): $($w.Proc
 # Screen pixels at 1920x1080; the taskbar takes the bottom 72 (150 %) or 84 (175 %).
 [SL]::Place($Explorer.Hwnd, 24, 590, 840, 410)
 [SL]::Place($Notepad.Hwnd, 24, 30, 840, 540)
-[SL]::Place($Queue.Hwnd, 900, 712, 1000, 284)
+[SL]::Place($Queue.Hwnd, 900, 712, 1032, 300)
 # The old printer's queue in front of the document, over a third of the screen, its Status column
 # wide enough for Windows' whole 'Error - Printing'.
 [SL]::Place($OldQueue.Hwnd, 714, 64, 1166, 640)
@@ -473,7 +472,7 @@ $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
 $CropX = if ($m.Success) { [int]$m.Groups[1].Value - $Region[0] } else { 1 }
 $CropY = if ($m.Success) { [int]$m.Groups[2].Value - $Region[1] } else { 31 }
-Start-Sleep -Milliseconds 700
+Start-Sleep -Milliseconds 500
 
 # Navigation 0 (addendum 2): OK on the error window, then the old printer's queue brought forward.
 $ok = [SL]::ButtonRect($ErrBox.Hwnd, 'OK')
@@ -522,7 +521,7 @@ Helper-Click
 Mark 'Print... chosen'
 $dlg = Wait-Until { [SL]::Windows() | Where-Object { $_.Cls -eq '#32770' -and $_.Title -eq 'Print' } | Select-Object -First 1 } 8 150
 if (-not $dlg) { Debug-Shot 'print-dialog-missing'; throw 'the Print dialog did not open' }
-Start-Sleep -Milliseconds 500
+Start-Sleep -Milliseconds 300
 $target = $null
 $plv = [SL]::ChildHandle($dlg.Hwnd, 'SysListView32')
 if ($plv -ne [IntPtr]::Zero) {
@@ -660,6 +659,7 @@ if ($cmWin) {
 } else { Note 'no connection panel window found on the store PC' }
 
 Step 'D. The good ending: the helper closes the session; the store PC afterwards'
+Ask @{ op = 'cursor' } 20 | Out-Null
 Ask @{ op = 'close-remote' } 20 | Out-Null
 $gone = Wait-Until { -not (Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' }) } 15 500
 Note "session over on the store PC: $([bool]$gone)"

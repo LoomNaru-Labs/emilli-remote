@@ -39,11 +39,11 @@ jobs:
       fail-fast: false
       matrix:
         # The take (run-take.ps1, brief addendum 2: the store PC larger, with an error window),
-        # office set first, at 150 % and at 175 % to compare; "probe" checks which printer
-        # faults Windows itself shows as an error.
+        # at 175 % (run 42812044340 compared 150 % and 175 %; 175 % still fits 1920x1080);
+        # "probe" checks which printer faults Windows itself shows as an error.
         include:
-          - { set: office, lang: en, scale: 150 }
           - { set: office, lang: en, scale: 175 }
+          - { set: store, lang: en, scale: 175 }
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
