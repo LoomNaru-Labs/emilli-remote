@@ -372,6 +372,9 @@ public static class SL {
     public static void RecordStart(int x, int y, int w, int h, int fps, string dir) {
         recStop = false; recFrames = 0; recLate = 0;
         System.IO.Directory.CreateDirectory(dir);
+        // Wall-clock start (Unix ms) so marks taken in another process map onto frames.csv.
+        long startUnix = (long)(DateTime.UtcNow - new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
+        System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "start.txt"), startUnix.ToString());
         recThread = new Thread(delegate() {
             Aware();
             var queue = new System.Collections.Concurrent.BlockingCollection<KeyValuePair<int, Bitmap>>(400);

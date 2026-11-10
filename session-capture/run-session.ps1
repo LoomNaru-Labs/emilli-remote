@@ -103,10 +103,7 @@ trap {
 New-Item -ItemType Directory -Force -Path $Out, $Debug, $Dir, "$Dir\bin", "$Dir\cmd", "$Dir\done", "$Dir\tmp", "$Dir\out", $Shots, "$Dir\secret" | Out-Null
 Copy-Item -Force (Join-Path $PSScriptRoot 'SessionLib.cs'), (Join-Path $PSScriptRoot 'helper-agent.ps1') "$Dir\bin"
 Add-Type -ReferencedAssemblies System.Drawing -Path (Join-Path $PSScriptRoot 'SessionLib.cs')
-Add-Type -AssemblyName UIAutomationClient, UIAutomationTypes, System.Drawing, System.Security
-$A = [System.Windows.Automation.AutomationElement]
-$TS = [System.Windows.Automation.TreeScope]
-$CT = [System.Windows.Automation.ControlType]
+Add-Type -AssemblyName System.Drawing, System.Security
 
 $s = [SL]::Screen()
 Note "console: session $([SL]::MySession()), user $env:USERNAME, screen $($s[2])x$($s[3]), $([Environment]::OSVersion.VersionString)"
@@ -128,7 +125,7 @@ function Ask([hashtable] $C, [int] $Timeout = 60) {
             if (-not $a.ok) { throw "helper $($C.op) failed: $($a.result)" }
             return $a.result
         }
-        Start-Sleep -Milliseconds 200
+        Start-Sleep -Milliseconds 40
     }
     throw "the helper did not answer $name within $Timeout s"
 }
@@ -138,9 +135,9 @@ function Helper-Point([int] $X, [int] $Y, [int] $Ms = 900) {
     Ask @{ op = 'move'; rx = $X; ry = $Y; ms = $Ms } 30 | Out-Null
 }
 function Helper-Click([switch] $Right) {
-    Ask @{ op = 'sleep'; ms = 300 } 10 | Out-Null
-    Ask @{ op = 'click'; right = [bool]$Right } 10 | Out-Null
+    Ask @{ op = 'click'; right = [bool]$Right; pause = 300 } 10 | Out-Null
 }
+function Now-Ms { [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds() }
 
 # ---------------------------------------------------------------- 1. Emilli Remote as a store PC
 Step 'Install Emilli Remote Setup as a store PC (silent, throwaway password)'
@@ -421,8 +418,9 @@ $recStore = Join-Path $Shots "rec-$base-controlled"
 if ($Record) {
     [SL]::RecordStart(0, 0, $s[2], $s[3], $Fps, $recStore)
     Ask @{ op = 'rec-start'; dir = $recHelper; fps = $Fps } 20 | Out-Null
-    Start-Sleep -Milliseconds 700
+    Start-Sleep -Milliseconds 600
 }
+$markA = Now-Ms
 # The job row: the first row of the queue's list, just under its column headers.
 $lv = [SL]::ChildRect($Queue.Hwnd, 'SysListView32')
 $hd = [SL]::ChildRect($Queue.Hwnd, 'SysHeader32')
@@ -442,16 +440,19 @@ Note "dialog on the store PC: $dlgText"
 if (-not $yes) { Debug-Shot 'confirm-missing'; throw 'the confirmation did not appear on the store PC' }
 Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 700
 Helper-Click
-$empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40
-Note "queue after the fix: $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue).Count) job(s)"
-if (-not $empty) { throw 'the job did not go away' }
-Start-Sleep -Milliseconds 1000
+# The helper goes back to the document while Windows clears the queue (a job that is printing
+# takes a few seconds to delete).
 $nr = [SL]::Info($Notepad.Hwnd)
 Helper-Point ($nr.Left + 420) ($nr.Top + 300) 900
 Helper-Click
-Start-Sleep -Milliseconds 1500
+$empty = Wait-Until { -not (Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue) } 40 200
+Note "queue after the fix: $(@(Get-PrintJob -PrinterName $P.Printer -ErrorAction SilentlyContinue).Count) job(s)"
+if (-not $empty) { throw 'the job did not go away' }
+Start-Sleep -Milliseconds 1000
 Ask @{ op = 'shot'; dir = $Shots; name = "$base-02-controller-fixed$Tag"; screen = $true } 30 | Out-Null
 Note "controlled screen after the fix: $([SL]::ShotScreen((Join-Path $Shots "$base-03-controlled-screen-fixed$Tag.png")))"
+$markB = Now-Ms
+Note "fix from the first move to the fixed state: $($markB - $markA) ms"
 if ($Record) {
     Start-Sleep -Milliseconds 600
     Ask @{ op = 'rec-stop' } 120 | Out-Null
@@ -484,16 +485,28 @@ if (-not $ff) {
     if (-not $ff -and (Test-Path 'C:\ProgramData\chocolatey\bin\ffmpeg.exe')) { $ff = 'C:\ProgramData\chocolatey\bin\ffmpeg.exe' }
 }
 foreach ($rec in @(@($recHelper, "$base-05-fix-controller"), @($recStore, "$base-05-fix-controlled"))) {
-    $times = Import-Csv (Join-Path $rec[0] 'frames.csv')
-    $n = @($times).Count
+    $times = @(Import-Csv (Join-Path $rec[0] 'frames.csv'))
+    $n = $times.Count
     $span = if ($n -gt 1) { [int]$times[$n - 1].ms - [int]$times[0].ms } else { 0 }
     Note "$($rec[1]): $n frames over $span ms ($([Math]::Round(($n - 1) * 1000.0 / [Math]::Max(1, $span), 1)) fps measured)"
+    # Cut to the fix: half a second before the first move until half a second after the
+    # fixed state (wall-clock marks mapped onto this recording's own frame times).
+    $start = [int64](Get-Content (Join-Path $rec[0] 'start.txt'))
+    $cutFrom = $markA - $start - 500; $cutTo = $markB - $start + 500
+    $sel = @($times | Where-Object { [int64]$_.ms -ge $cutFrom -and [int64]$_.ms -le $cutTo })
+    if ($sel.Count -lt 2) { $sel = $times }
+    $first = [int]$sel[0].frame; $count = $sel.Count; $last = $first + $count - 1
+    Note "$($rec[1]): kept frames $first to $last ($count frames, $([Math]::Round($count / [double]$Fps, 2)) s at $Fps fps)"
     if ($ff) {
         $mkv = Join-Path $Shots "$($rec[1]).mkv"
-        cmd /c "`"$ff`" -hide_banner -loglevel error -y -framerate $Fps -i `"$($rec[0])\frame-%05d.png`" -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
+        cmd /c "`"$ff`" -hide_banner -loglevel error -y -framerate $Fps -start_number $first -i `"$($rec[0])\frame-%05d.png`" -frames:v $count -c:v ffv1 -level 3 -pix_fmt bgr0 `"$mkv`" 2>&1" | ForEach-Object { Note "ffmpeg: $_" }
         if (Test-Path $mkv) { Note "video $($rec[1]).mkv $((Get-Item $mkv).Length) bytes" }
     }
-    Copy-Item -Force (Join-Path $rec[0] 'frames.csv') (Join-Path $Shots "$($rec[1])-frames.csv")
+    # Sample frames for checking the video by eye (debug folder only).
+    foreach ($k in @($first, [int](($first + $last) / 2), $last)) {
+        Copy-Item -Force (Join-Path $rec[0] ('frame-{0:D5}.png' -f $k)) (Join-Path $Debug ('{0}-frame-{1:D5}.png' -f $rec[1], $k)) -ErrorAction SilentlyContinue
+    }
+    $sel | Export-Csv -NoTypeInformation -Path (Join-Path $Shots "$($rec[1])-frames.csv")
 }
 }
 

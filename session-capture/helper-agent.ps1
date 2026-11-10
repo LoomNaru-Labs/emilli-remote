@@ -131,6 +131,7 @@ function Run($c) {
             return "remote $($c.rx),$($c.ry) -> helper screen $($p[0]),$($p[1]); cursor now $($now -join ',')"
         }
         'click' {
+            if ($c.pause) { Start-Sleep -Milliseconds ([int]$c.pause) }
             [SL]::Click([bool]$c.right)
             return "clicked $(if ($c.right) { 'right' } else { 'left' }) at $(([SL]::Cursor()) -join ',')"
         }
@@ -177,6 +178,6 @@ while ((Get-Date) -lt $deadline) {
         if ($c.op -eq 'quit') { $quit = $true }
     }
     if ($quit) { break }
-    Start-Sleep -Milliseconds 150
+    Start-Sleep -Milliseconds 40
 }
 Log 'agent end'
