@@ -654,6 +654,103 @@ public static class SL {
         SystemParametersInfo(0x0014, 0, "", 0x01 | 0x02);
     }
 
+    // ---- Round 3 (brief REMOTE-SESSION-CAPTURE-3) ----
+
+    // A double-click: two left clicks well inside Windows' double-click time.
+    public static void DoubleClick() {
+        Click(false);
+        Thread.Sleep(60);
+        Click(false);
+    }
+
+    // The desktop's icon list (the list view inside Progman or WorkerW).
+    public static IntPtr DesktopListView() {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows(new EnumProc(delegate(IntPtr h, IntPtr l) {
+            IntPtr view = FindWindowEx(h, IntPtr.Zero, "SHELLDLL_DefView", null);
+            if (view != IntPtr.Zero && found == IntPtr.Zero) {
+                IntPtr list = FindWindowEx(view, IntPtr.Zero, "SysListView32", null);
+                if (list != IntPtr.Zero) found = list;
+            }
+            return true;
+        }), IntPtr.Zero);
+        return found;
+    }
+
+    public static bool ShowDesktopIcons() {
+        IntPtr list = DesktopListView();
+        if (list == IntPtr.Zero) return false;
+        ShowWindow(list, 5);
+        return true;
+    }
+
+    // Tells the shell that settings changed (the desktop redraws its icons).
+    [DllImport("shell32.dll")] static extern void SHChangeNotify(int e, uint f, IntPtr a, IntPtr b);
+    public static void RefreshShell() { SHChangeNotify(0x08000000, 0x1000, IntPtr.Zero, IntPtr.Zero); }
+
+    static bool IsKind(int r, int g, int b, string kind) {
+        if (kind == "blue") return b >= 200 && r <= 110 && g >= 80 && g <= 200;
+        if (kind == "red") return r >= 220 && g <= 130 && b <= 130;
+        if (kind == "dark") return r <= 110 && g <= 110 && b <= 110;
+        return false;
+    }
+
+    // Groups of neighbouring pixel columns in a region that hold at least minColumn pixels of a
+    // colour kind ("blue": the app's toolbar and accent blues; "red": its red close button).
+    // Each group: left, top, right, bottom, pixel count (screen pixels).
+    public static int[][] Clusters(int x, int y, int w, int h, string kind, int minColumn) {
+        using (Bitmap bmp = Grab(x, y, w, h, false)) {
+            BitmapData d = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            byte[] px = new byte[d.Stride * h];
+            Marshal.Copy(d.Scan0, px, 0, px.Length);
+            bmp.UnlockBits(d);
+            List<int[]> res = new List<int[]>();
+            int[] cur = null;
+            for (int i = 0; i < w; i++) {
+                int n = 0, top = int.MaxValue, bottom = -1;
+                for (int j = 0; j < h; j++) {
+                    int o = j * d.Stride + i * 3;
+                    if (IsKind(px[o + 2], px[o + 1], px[o], kind)) { n++; if (j < top) top = j; if (j > bottom) bottom = j; }
+                }
+                if (n >= minColumn) {
+                    if (cur == null) cur = new int[] { x + i, y + top, x + i, y + bottom, 0 };
+                    cur[2] = x + i; cur[1] = Math.Min(cur[1], y + top); cur[3] = Math.Max(cur[3], y + bottom); cur[4] += n;
+                } else if (cur != null) { res.Add(cur); cur = null; }
+            }
+            if (cur != null) res.Add(cur);
+            return res.ToArray();
+        }
+    }
+
+    // A picture of a region kept for a later comparison, and the box of what changed since.
+    static Bitmap kept; static int keptX, keptY;
+    public static void Keep(int x, int y, int w, int h) {
+        if (kept != null) kept.Dispose();
+        kept = Grab(x, y, w, h, false); keptX = x; keptY = y;
+    }
+    // Box (screen pixels) of the pixels that differ by more than tol from the kept picture:
+    // left, top, right, bottom, count; count 0 when nothing changed.
+    public static int[] ChangedBox(int tol) {
+        if (kept == null) return new int[] { 0, 0, 0, 0, 0 };
+        int w = kept.Width, h = kept.Height;
+        using (Bitmap now = Grab(keptX, keptY, w, h, false)) {
+            BitmapData a = kept.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            BitmapData b = now.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+            byte[] pa = new byte[a.Stride * h], pb = new byte[b.Stride * h];
+            Marshal.Copy(a.Scan0, pa, 0, pa.Length); Marshal.Copy(b.Scan0, pb, 0, pb.Length);
+            kept.UnlockBits(a); now.UnlockBits(b);
+            int l = int.MaxValue, t = int.MaxValue, r = -1, bo = -1, n = 0;
+            for (int j = 0; j < h; j++) for (int i = 0; i < w; i++) {
+                int o = j * a.Stride + i * 3;
+                if (Math.Abs(pa[o] - pb[o]) > tol || Math.Abs(pa[o + 1] - pb[o + 1]) > tol || Math.Abs(pa[o + 2] - pb[o + 2]) > tol) {
+                    n++; if (i < l) l = i; if (i > r) r = i; if (j < t) t = j; if (j > bo) bo = j;
+                }
+            }
+            if (n == 0) return new int[] { 0, 0, 0, 0, 0 };
+            return new int[] { keptX + l, keptY + t, keptX + r, keptY + bo, n };
+        }
+    }
+
     // Hides the desktop icons (the list view inside Progman or WorkerW).
     public static int HideDesktopIcons() {
         int n = 0;

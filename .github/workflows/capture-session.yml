@@ -1,12 +1,16 @@
 # Real screenshots of a connected Emilli Remote session for the manual and the ads.
 #
-# One fresh windows-latest runner per set plays both PCs (session-capture/run-session.ps1): its
-# console session is the store PC, with the tested Emilli Remote Setup installed as a store PC
-# and a print job stuck on its screen; a second Windows session on the same runner (a
-# throwaway local user signed in through a Remote Desktop loopback) is the helper, who connects
-# with the installed app to 127.0.0.1 (direct access, the store PC password) and cancels the job
-# through the session with the real mouse. rd.emillis.net is blocked in the hosts file, so
-# nothing reaches our server; no account of ours is used. Screenshots are kept 3 days.
+# One fresh windows-latest runner per take plays both PCs: its console session is the store PC,
+# with the tested Emilli Remote Setup installed as a store PC; a second Windows session on the
+# same runner (a throwaway local user signed in through a Remote Desktop loopback) is the
+# helper, who connects with the installed app to 127.0.0.1 (direct access, the store PC
+# password) and works through the session with the real mouse. rd.emillis.net is blocked in
+# the hosts file, so nothing reaches our server; no account of ours is used. Kept 3 days.
+#
+# Round 3 (session-capture/run-take3.ps1): the store set again, as a story: the print fails,
+# the helper runs a printer check, fixes it through the session, sends a chat message, the
+# staff prints again. One take with the English message, one with the Korean one, and a probe
+# of Windows' own printer troubleshooter (probe-troubleshooter.ps1).
 name: Capture a connected session
 
 on:
@@ -32,18 +36,16 @@ env:
 
 jobs:
   session:
-    name: Connected session (${{ matrix.set }}, ${{ matrix.lang }}, ${{ matrix.scale }} %)
+    name: Round 3 (${{ matrix.kind }}, message ${{ matrix.msg }})
     runs-on: windows-latest
-    timeout-minutes: 40
+    timeout-minutes: 50
     strategy:
       fail-fast: false
       matrix:
-        # The take (run-take.ps1, brief addendum 2: the store PC larger, with an error window),
-        # at 175 % (run 42812044340 compared 150 % and 175 %; 175 % still fits 1920x1080);
-        # "probe" checks which printer faults Windows itself shows as an error.
         include:
-          - { set: office, lang: en, scale: 175 }
-          - { set: store, lang: en, scale: 175 }
+          - { kind: take, msg: en }
+          - { kind: take, msg: ko }
+          - { kind: probe, msg: none }
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -54,6 +56,7 @@ jobs:
           persist-credentials: false
 
       - name: Download the tested setup
+        if: matrix.kind == 'take'
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: emilli-remote-setup-${{ env.VERSION }}-windows
@@ -64,10 +67,12 @@ jobs:
       - name: Check the setup and prepare the runner
         shell: powershell
         run: |
-          $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
-          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
-          Write-Host "Setup SHA-256 $hash"
-          if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          if ("${{ matrix.kind }}" -eq 'take') {
+            $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
+            $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+            Write-Host "Setup SHA-256 $hash"
+            if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          }
           # Keep the runner away from our real server: no runner device on rd.emillis.net.
           Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
           ipconfig /flushdns | Out-Null
@@ -77,21 +82,21 @@ jobs:
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
 
-      - name: Connected session
-        if: matrix.set != 'probe'
+      - name: Round 3 take (store set)
+        if: matrix.kind == 'take'
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-take.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} -Scale ${{ matrix.scale }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-take3.ps1 -Msg ${{ matrix.msg }} -Scale 175 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
 
-      - name: Printer probe
-        if: matrix.set == 'probe'
+      - name: Printer troubleshooter probe
+        if: matrix.kind == 'probe'
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\probe-printer.ps1 -Out "$env:RUNNER_TEMP\session"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\probe-troubleshooter.ps1 -Out "$env:RUNNER_TEMP\session"
 
-      - name: Keep the screenshots
+      - name: Keep the pictures and recordings
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: session-${{ matrix.set }}-${{ matrix.lang }}-${{ matrix.scale }}
+          name: round3-${{ matrix.kind }}-${{ matrix.msg }}
           path: ${{ runner.temp }}/session
           retention-days: ${{ env.RETENTION_DAYS }}
           if-no-files-found: warn

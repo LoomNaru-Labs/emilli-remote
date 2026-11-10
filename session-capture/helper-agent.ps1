@@ -137,7 +137,18 @@ function Run($c) {
             $p = Map ([double]$c.rx) ([double]$c.ry)
             [SL]::Glide($p[0], $p[1], [int]$c.ms)
             $now = [SL]::Cursor()
-            return "remote $($c.rx),$($c.ry) -> helper screen $($p[0]),$($p[1]); cursor now $($now -join ',')"
+            # Round 3: the click in the same command (one round trip less per action).
+            $did = ''
+            if ($c.click) {
+                Start-Sleep -Milliseconds 120
+                switch ([string]$c.click) {
+                    'left' { [SL]::Click($false) }
+                    'right' { [SL]::Click($true) }
+                    'double' { [SL]::DoubleClick() }
+                }
+                $did = "; $($c.click) click"
+            }
+            return "remote $($c.rx),$($c.ry) -> helper screen $($p[0]),$($p[1]); cursor now $($now -join ',')$did"
         }
         'click' {
             if ($c.pause) { Start-Sleep -Milliseconds ([int]$c.pause) }
@@ -266,6 +277,81 @@ function Run($c) {
         }
         'rec-stop' { return [SL]::RecordStop() }
         'sleep' { Start-Sleep -Milliseconds ([int]$c.ms); return 'slept' }
+        # ---- Round 3 (brief REMOTE-SESSION-CAPTURE-3) ----
+        # A double-click where the pointer is (through the session when it is over the picture).
+        'dclick' { [SL]::DoubleClick(); return "double-clicked at $(([SL]::Cursor()) -join ',')" }
+        # The session window's toolbar starts collapsed to a small handle at the top centre of
+        # the picture (fullscreen and "Show Toolbar" icons, flutter/lib/desktop/widgets/
+        # remote_toolbar.dart, _DraggableShowHide). The helper clicks "Show Toolbar" (the handle's
+        # rightmost icon); the toolbar's blue buttons appear above it: Control, Display, Keyboard,
+        # Chat, Record, then the red Close (_buildToolbar; Pin is grey while not pinned).
+        'toolbar-show' {
+            $clip = [SL]::Clip($state.Remote)
+            $cx = $clip[0] + [int]($clip[2] / 2)
+            $hb = @([SL]::Clusters($cx - 130, $clip[1] + 30, 260, 28, 'blue', 2))
+            Log "toolbar handle icons: $(($hb | ForEach-Object { $_ -join ',' }) -join ' / ')"
+            if ($hb.Count -eq 0) { throw 'no toolbar handle at the top of the session window' }
+            $t = $hb[$hb.Count - 1]
+            $tx = [int](($t[0] + $t[2]) / 2); $ty = [int](($t[1] + $t[3]) / 2)
+            [SL]::Glide($tx, $ty, [int]$c.ms); Start-Sleep -Milliseconds 150; [SL]::Click($false)
+            $btn = @(); $red = @()
+            for ($i = 0; $i -lt 20 -and ($btn.Count -lt 4 -or $red.Count -lt 1); $i++) {
+                Start-Sleep -Milliseconds 100
+                $btn = @([SL]::Clusters($cx - 420, $clip[1] + 30, 840, 50, 'blue', 10) | Where-Object { ($_[2] - $_[0]) -ge 18 -and ($_[3] - $_[1]) -ge 20 })
+                $red = @([SL]::Clusters($cx - 420, $clip[1] + 30, 840, 50, 'red', 10) | Where-Object { ($_[2] - $_[0]) -ge 18 })
+            }
+            $desc = "show-toolbar at $tx,$ty; blue buttons $(($btn | ForEach-Object { '[' + ($_[0..3] -join ',') + ']' }) -join ' '); red $(($red | ForEach-Object { '[' + ($_[0..3] -join ',') + ']' }) -join ' ')"
+            Log $desc
+            if ($red.Count -lt 1 -or $btn.Count -lt 2) { throw "the toolbar did not open: $desc" }
+            # Chat: the blue button before the last blue one (Record) left of the red Close.
+            $left = @($btn | Where-Object { $_[2] -lt $red[0][0] } | Sort-Object { $_[0] })
+            if ($left.Count -lt 2) { throw "too few buttons left of Close: $desc" }
+            $ch = $left[$left.Count - 2]
+            $state.ChatL = $ch[0]; $state.ChatT = $ch[1]; $state.ChatR = $ch[2]; $state.ChatB = $ch[3]
+            return "$desc; chat button $($ch[0..3] -join ',')"
+        }
+        # Chat, then "Text chat" in its menu (the first item, 12 px menu padding, 32 px rows); the
+        # chat window (250x350, flutter/lib/models/chat_model.dart) opens at the Chat button.
+        'chat-open' {
+            $bx = [int](($state.ChatL + $state.ChatR) / 2); $by = [int](($state.ChatT + $state.ChatB) / 2)
+            [SL]::Glide($bx, $by, [int]$c.ms); Start-Sleep -Milliseconds 150; [SL]::Click($false)
+            Start-Sleep -Milliseconds 500
+            $state.OvL = $state.ChatL - 40; $state.OvT = $state.ChatB + 40
+            [SL]::Keep($state.OvL, $state.OvT, 330, 330)
+            $mx = $state.ChatL + 46; $my = $state.ChatB + 1 + 12 + 16
+            [SL]::Glide($mx, $my, 380); Start-Sleep -Milliseconds 150; [SL]::Click($false)
+            $box = $null
+            # Opened = changes spread over a box the chat window's size (the menu closing alone
+            # changes a small strip at the top of this area); white may lie on white inside.
+            for ($i = 0; $i -lt 25; $i++) {
+                Start-Sleep -Milliseconds 80
+                $b = [SL]::ChangedBox(30)
+                if ($b[4] -gt 0 -and ($b[2] - $b[0]) -ge 180 -and ($b[3] - $b[1]) -ge 200) { Start-Sleep -Milliseconds 250; $box = [SL]::ChangedBox(30); break }
+            }
+            if (-not $box) { $b = [SL]::ChangedBox(30); throw "the chat window did not open (changed $($b -join ','))" }
+            $state.ChatBox = $box
+            return "Text chat clicked at $mx,$my; chat window area changed: $($box -join ',')"
+        }
+        # Types the message into the chat window's input (it has the focus when it opens).
+        'chat-type' {
+            $text = if ($c.cp) { -join ($c.cp | ForEach-Object { [char][int]$_ }) } else { [string]$c.text }
+            [SL]::TypeText($text, [int]$c.ms)
+            return "typed $($text.Length) characters"
+        }
+        # The send button (MyTheme.accent blue, the right end of the input row, shown once there
+        # is text; Enter only adds a line there, dash_chat_2 sendOnEnter is false).
+        'chat-send' {
+            $b = $state.ChatBox
+            $x0 = $state.OvL; $w0 = 330
+            $y0 = [Math]::Max($state.OvT, $b[3] - 90); $h0 = [Math]::Max(20, [Math]::Min(100, $b[3] - $y0 + 8))
+            $cl = @([SL]::Clusters($x0, $y0, $w0, $h0, 'blue', 4) | Where-Object { ($_[2] - $_[0]) -ge 8 -and ($_[2] - $_[0]) -le 40 })
+            Log "send button candidates in $x0,$y0 ${w0}x${h0}: $(($cl | ForEach-Object { '[' + ($_[0..3] -join ',') + ']' }) -join ' ')"
+            if ($cl.Count -eq 0) { throw 'no send button found' }
+            $s = $cl | Sort-Object { $_[2] } | Select-Object -Last 1
+            $sx = [int](($s[0] + $s[2]) / 2); $sy = [int](($s[1] + $s[3]) / 2)
+            [SL]::Glide($sx, $sy, [int]$c.ms); Start-Sleep -Milliseconds 150; [SL]::Click($false)
+            return "send clicked at $sx,$sy"
+        }
         'quit' { return 'bye' }
         default { throw "unknown op $($c.op)" }
     }

@@ -13,5 +13,11 @@ while ($true) {
         $stream = $client.GetStream()
         while (($n = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) { $total += $n }
     } catch { } finally { $client.Close() }
-    Add-Content -Path $Log -Value ("{0} job received, {1} bytes" -f (Get-Date -Format 'HH:mm:ss.fff'), $total)
+    # A connection without data is someone checking that the printer answers (round 3's printer
+    # check), not a print job; it goes to a separate log so job counts stay exact.
+    if ($total -gt 0) {
+        Add-Content -Path $Log -Value ("{0} job received, {1} bytes" -f (Get-Date -Format 'HH:mm:ss.fff'), $total)
+    } else {
+        Add-Content -Path ($Log -replace '\.log$', '-probes.log') -Value ("{0} answered a connection without data" -f (Get-Date -Format 'HH:mm:ss.fff'))
+    }
 }
