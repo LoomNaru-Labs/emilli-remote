@@ -32,17 +32,18 @@ env:
 
 jobs:
   session:
-    name: Connected session (${{ matrix.set }}, ${{ matrix.lang }})
+    name: Connected session (${{ matrix.set }}, ${{ matrix.lang }}, ${{ matrix.scale }} %)
     runs-on: windows-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        # The take (run-take.ps1, brief addendum 1), office set first; "probe" checks which
-        # printer faults Windows itself shows as an error.
+        # The take (run-take.ps1, brief addendum 2: the store PC larger, with an error window),
+        # office set first, at 150 % and at 175 % to compare; "probe" checks which printer
+        # faults Windows itself shows as an error.
         include:
-          - { set: office, lang: en }
-          - { set: store, lang: en }
+          - { set: office, lang: en, scale: 150 }
+          - { set: office, lang: en, scale: 175 }
     steps:
       - name: Checkout the capture scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -79,7 +80,7 @@ jobs:
       - name: Connected session
         if: matrix.set != 'probe'
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-take.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File session-capture\run-take.ps1 -Set ${{ matrix.set }} -Lang ${{ matrix.lang }} -Scale ${{ matrix.scale }} -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\session"
 
       - name: Printer probe
         if: matrix.set == 'probe'
@@ -90,7 +91,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: session-${{ matrix.set }}-${{ matrix.lang }}
+          name: session-${{ matrix.set }}-${{ matrix.lang }}-${{ matrix.scale }}
           path: ${{ runner.temp }}/session
           retention-days: ${{ env.RETENTION_DAYS }}
           if-no-files-found: warn

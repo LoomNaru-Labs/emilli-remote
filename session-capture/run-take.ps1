@@ -12,6 +12,11 @@
 # PC's desktop in the session window, then with the real mouse through the session: the stuck
 # job cancelled, the document printed again on the printer that works. Stills come from the
 # recorded frames; the error screen is taken before the session, the good ending after it.
+#
+# Addendum 2: the store PC runs at -Scale percent (150 or 175) with a larger Windows pointer
+# (-PointerSize, Settings, Accessibility, Mouse pointer), and shows Windows' message box with the
+# red error icon in the middle of the screen (error-box.ps1); in the take the helper first clicks
+# OK on it and brings the old printer's queue forward.
 # Plain ASCII on purpose (Windows PowerShell 5.1).
 param(
     [Parameter(Mandatory)] [ValidateSet('office', 'store')] [string] $Set,
@@ -19,6 +24,8 @@ param(
     [Parameter(Mandatory)] [string] $Out,
     # The app's own language setting (Windows stays English); 'ko' adds -ko to every file name.
     [ValidateSet('en', 'ko')] [string] $Lang = 'en',
+    [ValidateSet(100, 125, 150, 175, 200)] [int] $Scale = 150,
+    [ValidateRange(1, 15)] [int] $PointerSize = 4,
     [switch] $Record
 )
 $ErrorActionPreference = 'Stop'
@@ -247,6 +254,25 @@ Register-ScheduledTask -TaskName 'EmilliSessionHelper' -Action $act -Principal $
 Start-ScheduledTask -TaskName 'EmilliSessionHelper'
 Ask @{ op = 'hello' } 90 | Out-Null
 
+# ---------------------------------------------------------------- 2b. larger: scale and pointer (addendum 2)
+# Switched only now, with the helper's session already signed in at 100 %, so the helper's side
+# keeps its 1:1 picture; every window of the staged problem opens after the switch and draws at
+# the new scale. The app's own processes are per-monitor DPI aware (runner.exe.manifest).
+Step "The store PC at $Scale % with a larger pointer (size $PointerSize)"
+& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot '..\windows-capture\capture-display.ps1') -Width $s[2] -Height $s[3] -Scale $Scale | ForEach-Object { Note $_ }
+$wantDpi = [int](96 * $Scale / 100)
+$dpiNow = Wait-Until { $d = [SL]::MonitorDpi(); if ($d -eq $wantDpi) { $d } } 15 500
+Note "store PC screen DPI now $([SL]::MonitorDpi()) (wanted $wantDpi); screen $(([SL]::Screen())[2])x$(([SL]::Screen())[3])"
+if (-not $dpiNow) { Debug-Shot 'scale-not-set'; throw "the store PC is not at $Scale %" }
+Note "store PC: $([SL]::SetPointerSize($PointerSize))"
+$helperDpi = Ask @{ op = 'dpi' } 20
+if ($helperDpi -notmatch 'DPI 96$') { throw "the helper's screen changed with the store PC ($helperDpi); its picture would not be 1:1" }
+# The helper's own pointer about as large in pixels as the store PC's, so it does not change
+# size where the session window begins (the helper's screen stays at 100 %).
+$pxNow = [regex]::Match([SL]::PointerPixels(), '^(\d+)x')
+$helperSize = if ($pxNow.Success) { [Math]::Max(1, [Math]::Min(15, [int][Math]::Round(([int]$pxNow.Groups[1].Value - 32) / 16.0) + 1)) } else { $PointerSize }
+Ask @{ op = 'pointer'; size = $helperSize } 20 | Out-Null
+
 # ---------------------------------------------------------------- 3. the staged problem on the store PC
 Step "Stage the problem on the store PC ($Set set)"
 Set-ItemProperty 'HKCU:\Control Panel\Desktop' -Name Wallpaper -Value ''
@@ -334,14 +360,20 @@ $found = Wait-Until {
 if (-not $found) { [SL]::Windows() | ForEach-Object { Note "$_" }; throw 'the staged windows did not open' }
 $Notepad, $Explorer, $OldQueue, $Queue = $found
 Start-Sleep -Seconds 2
-[SL]::Place($Explorer.Hwnd, 40, 610, 760, 390)
-[SL]::Place($Notepad.Hwnd, 40, 60, 760, 520)
-[SL]::Place($Queue.Hwnd, 1000, 700, 900, 320)
+foreach ($w in $found) { Note "window DPI $([SL]::WindowDpi($w.Hwnd)): $($w.Proc) '$($w.Title)'" }
+# Screen pixels at 1920x1080; the taskbar takes the bottom 72 (150 %) or 84 (175 %).
+[SL]::Place($Explorer.Hwnd, 24, 590, 840, 410)
+[SL]::Place($Notepad.Hwnd, 24, 30, 840, 540)
+[SL]::Place($Queue.Hwnd, 900, 712, 1000, 284)
 # The old printer's queue in front of the document, over a third of the screen, its Status column
 # wide enough for Windows' whole 'Error - Printing'.
-[SL]::Place($OldQueue.Hwnd, 560, 90, 1300, 560)
+[SL]::Place($OldQueue.Hwnd, 714, 64, 1166, 640)
 $oqList = [SL]::ChildHandle($OldQueue.Hwnd, 'SysListView32')
-if ($oqList -ne [IntPtr]::Zero) { [SL]::SetColumnWidth($oqList, 0, 260); [SL]::SetColumnWidth($oqList, 1, 230) }
+# Column widths are in the queue window's own pixels (96 DPI ones if Windows stretches it).
+$qf = [SL]::WindowDpi($OldQueue.Hwnd) / [double][SL]::MonitorDpi()
+if ($oqList -ne [IntPtr]::Zero) { [SL]::SetColumnWidth($oqList, 0, [int](400 * $qf)); [SL]::SetColumnWidth($oqList, 1, [int](330 * $qf)) }
+$gqList = [SL]::ChildHandle($Queue.Hwnd, 'SysListView32')
+if ($gqList -ne [IntPtr]::Zero) { [SL]::SetColumnWidth($gqList, 0, [int](440 * $qf)); [SL]::SetColumnWidth($gqList, 1, [int](220 * $qf)) }
 foreach ($w in [SL]::Windows()) {
     if ($w.Cls -in @('ConsoleWindowClass', 'CASCADIA_HOSTING_WINDOW_CLASS') -and [SL]::SessionOf($w.Pid) -eq [SL]::MySession()) {
         [SL]::Show($w.Hwnd, 6); [SL]::HideFromTaskbar($w.Hwnd); Note "runner window hidden: $w"
@@ -357,7 +389,19 @@ foreach ($w in [SL]::Windows()) {
 [SL]::Front($Explorer.Hwnd); Start-Sleep -Milliseconds 300
 [SL]::Front($Notepad.Hwnd); Start-Sleep -Milliseconds 300
 [SL]::Front($Queue.Hwnd); Start-Sleep -Milliseconds 300
-[SL]::Front($OldQueue.Hwnd); Start-Sleep -Seconds 2
+[SL]::Front($OldQueue.Hwnd); Start-Sleep -Seconds 1
+# The error itself (addendum 2, 1 b): Windows' message box with the red error icon, centred, in
+# front of the document and the queue. Round 1 showed that the failed job raises no Windows
+# dialog or notification of its own, so this is the standard message box, titled with the
+# printer's name.
+$ErrTitle = $Old
+$ErrText = 'The document could not be printed.'
+Start-Process -FilePath powershell.exe -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Join-Path $PSScriptRoot 'error-box.ps1'), '-Title', "`"$ErrTitle`"", '-Text', "`"$ErrText`"")
+$ErrBox = Wait-Until { [SL]::Windows() | Where-Object { $_.Cls -eq '#32770' -and $_.Title -eq $ErrTitle -and $_.Proc -eq 'powershell' } | Select-Object -First 1 } 30 300
+if (-not $ErrBox) { Debug-Shot 'error-box-missing'; throw 'the error message box did not open' }
+Start-Sleep -Seconds 2
+$ErrBox = [SL]::Info($ErrBox.Hwnd)
+Note "error window: $ErrBox (DPI $([SL]::WindowDpi($ErrBox.Hwnd))) $([SL]::ChildTexts($ErrBox.Hwnd))"
 $base = "session-$Set"
 $oq = [SL]::Info($OldQueue.Hwnd)
 Note "A. error screen: $([SL]::ShotScreen((Join-Path $Shots "$base-00-error-screen$Tag.png"))); old queue window $($oq.Width)x$($oq.Height) = $([int](100.0 * $oq.Width * $oq.Height / ($s[2] * $s[3])))% of the screen"
@@ -429,12 +473,25 @@ $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
 $CropX = if ($m.Success) { [int]$m.Groups[1].Value - $Region[0] } else { 1 }
 $CropY = if ($m.Success) { [int]$m.Groups[2].Value - $Region[1] } else { 31 }
-Start-Sleep -Milliseconds 400
+Start-Sleep -Milliseconds 700
+
+# Navigation 0 (addendum 2): OK on the error window, then the old printer's queue brought forward.
+$ok = [SL]::ButtonRect($ErrBox.Hwnd, 'OK')
+if (-not $ok) { Debug-Shot 'ok-missing'; throw 'no OK button on the error window' }
+Helper-Point ([int](($ok[0] + $ok[2]) / 2)) ([int](($ok[1] + $ok[3]) / 2)) 650
+Helper-Click
+Mark 'OK on the error window'
+$gone = Wait-Until { -not ([SL]::Windows() | Where-Object { $_.Hwnd -eq $ErrBox.Hwnd }) } 4 100
+Note "error window closed: $([bool]$gone)"
+$oqf = [SL]::Frame($OldQueue.Hwnd)
+Helper-Point ($oqf.Left + 360) ($oqf.Top + [int](15 * [SL]::MonitorDpi() / 96)) 600
+Helper-Click
+Mark "the old printer's queue brought forward"
 
 # Navigation 1: the stuck job on the old printer.
 $lv = [SL]::ChildRect($OldQueue.Hwnd, 'SysListView32')
 $hd = [SL]::ChildRect($OldQueue.Hwnd, 'SysHeader32')
-Helper-Point ($lv[0] + 90) ($hd[3] + 11) 700
+Helper-Point ($lv[0] + 140) ($hd[3] + [int](10 * [SL]::MonitorDpi() / 96)) 600
 Helper-Click -Right
 Mark 'right-click on the stuck job'
 $menuTexts = ''
@@ -506,13 +563,17 @@ $oldLeft = @(Get-PrintJob -PrinterName $Old -ErrorAction SilentlyContinue).Count
 Note "stand-in printer: $(@(Get-Content -Path $sinkLog -ErrorAction SilentlyContinue) -join ' / '); '$($P.Printer)' queue: $jobsNow; old printer: $oldLeft job(s)"
 if (-not $through) { Debug-Shot 'not-printed'; throw 'the document did not reach the working printer' }
 Mark "printed: the job went through to '$($P.Printer)'"
-Start-Sleep -Milliseconds 1200
+# The working printer's own queue window shows it: Status 'Printed' (read from the window).
+$shown = $null
+if ($gqList -ne [IntPtr]::Zero) { $shown = Wait-Until { @([SL]::ListViewItems($gqList, 1)) | Where-Object { $_ -like 'Printed|*' } | Select-Object -First 1 } 4 150 }
+if ($shown) { Mark "'$($P.Printer)' queue shows Printed" } else { Note "the working queue's Status column: $(@([SL]::ListViewItems($gqList, 1)) -join ' / ')" }
+Start-Sleep -Milliseconds 1100
 Mark 'end'
 
-# The cut: 14 to 20 s, the same still time before the first mark and after the last.
+# The cut: 16 to 22 s (addendum 2), the same still time before the first mark and after the last.
 $span = $Marks[$Marks.Count - 1][0] - $Marks[0][0]
-$pad = [Math]::Max(300, [int]((15000 - $span) / 2))
-if ($span + 2 * $pad -gt 20000) { $pad = [Math]::Max(0, [int]((20000 - $span) / 2)) }
+$pad = [Math]::Max(300, [int]((17000 - $span) / 2))
+if ($span + 2 * $pad -gt 22000) { $pad = [Math]::Max(0, [int]((22000 - $span) / 2)) }
 $pad = [Math]::Min($pad, 1400)
 Note "take $span ms between the first and the last mark; $pad ms kept before and after"
 $tail = $Marks[$Marks.Count - 1][0] + $pad + 300 - (Now-Ms)

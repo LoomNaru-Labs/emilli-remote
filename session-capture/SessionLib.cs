@@ -56,6 +56,85 @@ public static class SL {
 
     public static void Aware() { SetThreadDpiAwarenessContext(new IntPtr(-4)); }
 
+    // Display scale: the screen's effective DPI now (96 = 100 %, 144 = 150 %), and the DPI a
+    // window draws at (96 for a program that does not know about scaling, then Windows stretches it).
+    [DllImport("user32.dll")] static extern IntPtr MonitorFromPoint(POINT p, uint flags);
+    [DllImport("shcore.dll")] static extern int GetDpiForMonitor(IntPtr m, int type, out uint x, out uint y);
+    [DllImport("user32.dll")] static extern uint GetDpiForWindow(IntPtr h);
+    [DllImport("user32.dll")] static extern IntPtr GetWindowDpiAwarenessContext(IntPtr h);
+    public static int MonitorDpi() {
+        Aware();
+        POINT p = new POINT(); uint x, y;
+        return GetDpiForMonitor(MonitorFromPoint(p, 1), 0, out x, out y) == 0 ? (int)x : -1;
+    }
+    public static int WindowDpi(IntPtr h) { return (int)GetDpiForWindow(h); }
+
+    // Another program's menu and list positions come in that program's own view of the screen
+    // (a program that does not know about scaling sees 96 DPI pixels). They are read in the
+    // window's own DPI context and mapped to screen pixels through the window's rectangle seen
+    // both ways.
+    static RECT EnterContextOf(IntPtr h) {
+        SetThreadDpiAwarenessContext(GetWindowDpiAwarenessContext(h));
+        RECT r; GetWindowRect(h, out r); return r;
+    }
+    static int[] LeaveAndMap(IntPtr h, RECT seen, int[] r) {
+        Aware();
+        if (r == null) return null;
+        RECT p; GetWindowRect(h, out p);
+        double sx = (double)(p.Right - p.Left) / Math.Max(1, seen.Right - seen.Left);
+        double sy = (double)(p.Bottom - p.Top) / Math.Max(1, seen.Bottom - seen.Top);
+        return new int[] {
+            p.Left + (int)Math.Round((r[0] - seen.Left) * sx), p.Top + (int)Math.Round((r[1] - seen.Top) * sy),
+            p.Left + (int)Math.Round((r[2] - seen.Left) * sx), p.Top + (int)Math.Round((r[3] - seen.Top) * sy) };
+    }
+
+    // Windows' own mouse pointer size (Settings, Accessibility, Mouse pointer, size 1 to 15),
+    // for this signed-in user, applied at once; and the pointer's size in pixels now.
+    [DllImport("user32.dll")] static extern bool SystemParametersInfo(uint a, uint b, IntPtr c, uint f);
+    [DllImport("gdi32.dll")] static extern int GetObject(IntPtr h, int n, out BITMAP b);
+    [StructLayout(LayoutKind.Sequential)] struct BITMAP { public int bmType, bmWidth, bmHeight, bmWidthBytes; public ushort bmPlanes, bmBitsPixel; public IntPtr bmBits; }
+    public static string SetPointerSize(int size) {
+        int baseSize = 32 + 16 * (size - 1);
+        using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Control Panel\Cursors"))
+            k.SetValue("CursorBaseSize", baseSize, Microsoft.Win32.RegistryValueKind.DWord);
+        using (Microsoft.Win32.RegistryKey k = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\Microsoft\Accessibility"))
+            k.SetValue("CursorSize", size, Microsoft.Win32.RegistryValueKind.DWord);
+        bool a = SystemParametersInfo(0x2029, 0, new IntPtr(baseSize), 3);
+        bool b = SystemParametersInfo(0x0057, 0, IntPtr.Zero, 3);
+        Thread.Sleep(500);
+        return "pointer size " + size + " (base " + baseSize + " px; size call " + a + ", reload " + b + "), pointer now " + PointerPixels() + " px";
+    }
+    public static string PointerPixels() {
+        Aware();
+        CURSORINFO ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
+        if (!GetCursorInfo(ref ci) || ci.hCursor == IntPtr.Zero) return "(no pointer)";
+        int[] wh = CursorSize(ci.hCursor);
+        return wh[0] + "x" + wh[1];
+    }
+    static int[] CursorSize(IntPtr cursor) {
+        ICONINFO ii;
+        if (!GetIconInfo(cursor, out ii)) return new int[] { 0, 0 };
+        BITMAP bm; int w = 0, h = 0;
+        if (ii.hbmColor != IntPtr.Zero && GetObject(ii.hbmColor, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { w = bm.bmWidth; h = bm.bmHeight; }
+        else if (ii.hbmMask != IntPtr.Zero && GetObject(ii.hbmMask, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { w = bm.bmWidth; h = bm.bmHeight / 2; }
+        if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
+        if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
+        return new int[] { w, h };
+    }
+
+    // A button of one dialog window, by caption: its screen rectangle.
+    public static int[] ButtonRect(IntPtr dialog, string caption) {
+        Aware();
+        int[] found = null;
+        EnumChildWindows(dialog, new EnumProc(delegate(IntPtr h, IntPtr l) {
+            if (found == null && IsWindowVisible(h) && ClassOf(h) == "Button" && TitleOf(h).Replace("&", "") == caption) {
+                RECT r; GetWindowRect(h, out r); found = new int[] { r.Left, r.Top, r.Right, r.Bottom };
+            }
+            return true;
+        }), IntPtr.Zero);
+        return found;
+    }
+
     public static uint SessionOf(uint pid) { uint s; return ProcessIdToSessionId(pid, out s) ? s : 0xFFFFFFFF; }
     public static uint MySession() { return SessionOf((uint)Process.GetCurrentProcess().Id); }
 
@@ -164,8 +243,13 @@ public static class SL {
                 if (GetCursorInfo(ref ci) && (ci.flags & 1) != 0 && ci.hCursor != IntPtr.Zero) {
                     ICONINFO ii;
                     if (GetIconInfo(ci.hCursor, out ii)) {
+                        // Drawn at the pointer's real size (a larger pointer set in Windows is a
+                        // larger bitmap; size 0 could draw the standard 32 px one).
+                        BITMAP bm; int cw = 0, chh = 0;
+                        if (ii.hbmColor != IntPtr.Zero && GetObject(ii.hbmColor, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { cw = bm.bmWidth; chh = bm.bmHeight; }
+                        else if (ii.hbmMask != IntPtr.Zero && GetObject(ii.hbmMask, Marshal.SizeOf(typeof(BITMAP)), out bm) != 0) { cw = bm.bmWidth; chh = bm.bmHeight / 2; }
                         IntPtr hdc = g.GetHdc();
-                        DrawIconEx(hdc, ci.pt.X - ii.xHotspot - x, ci.pt.Y - ii.yHotspot - y, ci.hCursor, 0, 0, 0, IntPtr.Zero, 3);
+                        DrawIconEx(hdc, ci.pt.X - ii.xHotspot - x, ci.pt.Y - ii.yHotspot - y, ci.hCursor, cw, chh, 0, IntPtr.Zero, 3);
                         g.ReleaseHdc(hdc);
                         if (ii.hbmMask != IntPtr.Zero) DeleteObject(ii.hbmMask);
                         if (ii.hbmColor != IntPtr.Zero) DeleteObject(ii.hbmColor);
@@ -340,8 +424,11 @@ public static class SL {
                     string t = s.ToString().Replace("&", "");
                     texts += "[" + t + "] ";
                     RECT r;
-                    if (found == null && t.StartsWith(word, StringComparison.OrdinalIgnoreCase) && GetMenuItemRect(menuWnd, menu, (uint)i, out r))
-                        found = new int[] { r.Left, r.Top, r.Right, r.Bottom };
+                    if (found == null && t.StartsWith(word, StringComparison.OrdinalIgnoreCase)) {
+                        RECT seen = EnterContextOf(menuWnd);
+                        int[] raw = GetMenuItemRect(menuWnd, menu, (uint)i, out r) ? new int[] { r.Left, r.Top, r.Right, r.Bottom } : null;
+                        found = LeaveAndMap(menuWnd, seen, raw);
+                    }
                 }
             }
             menuWnd = FindWindowEx(IntPtr.Zero, menuWnd, "#32768", null);
@@ -389,8 +476,11 @@ public static class SL {
             StringBuilder s = new StringBuilder(256);
             GetMenuString(menu, (uint)i, s, 256, 0x400);
             RECT r;
-            if (s.ToString().Replace("&", "").StartsWith(word, StringComparison.OrdinalIgnoreCase) && GetMenuItemRect(wnd, menu, (uint)i, out r))
-                return new int[] { r.Left, r.Top, r.Right, r.Bottom };
+            if (s.ToString().Replace("&", "").StartsWith(word, StringComparison.OrdinalIgnoreCase)) {
+                RECT seen = EnterContextOf(wnd);
+                int[] raw = GetMenuItemRect(wnd, menu, (uint)i, out r) ? new int[] { r.Left, r.Top, r.Right, r.Bottom } : null;
+                return LeaveAndMap(wnd, seen, raw);
+            }
         }
         return null;
     }
@@ -404,7 +494,9 @@ public static class SL {
     [DllImport("kernel32.dll")] static extern bool ReadProcessMemory(IntPtr p, IntPtr a, byte[] b, UIntPtr n, out UIntPtr r);
     [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
     [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr h, ref POINT p);
-    public static string[] ListViewItems(IntPtr lv) {
+    public static string[] ListViewItems(IntPtr lv) { return ListViewItems(lv, 0); }
+    // The same with the text of another column (1 = a print queue's Status column).
+    public static string[] ListViewItems(IntPtr lv, int column) {
         Aware();
         List<string> res = new List<string>();
         uint pid; GetWindowThreadProcessId(lv, out pid);
@@ -416,7 +508,7 @@ public static class SL {
             UIntPtr io;
             for (int i = 0; i < count; i++) {
                 byte[] item = new byte[88];
-                BitConverter.GetBytes(0).CopyTo(item, 8);                         // iSubItem
+                BitConverter.GetBytes(column).CopyTo(item, 8);                    // iSubItem
                 BitConverter.GetBytes(mem.ToInt64() + 1024).CopyTo(item, 24);    // pszText
                 BitConverter.GetBytes(256).CopyTo(item, 32);                       // cchTextMax
                 WriteProcessMemory(proc, mem, item, (UIntPtr)item.Length, out io);
@@ -431,8 +523,10 @@ public static class SL {
                 ReadProcessMemory(proc, new IntPtr(mem.ToInt64() + 512), rc, (UIntPtr)16, out io);
                 POINT a = new POINT(); a.X = BitConverter.ToInt32(rc, 0); a.Y = BitConverter.ToInt32(rc, 4);
                 POINT b = new POINT(); b.X = BitConverter.ToInt32(rc, 8); b.Y = BitConverter.ToInt32(rc, 12);
+                RECT seen = EnterContextOf(lv);
                 ClientToScreen(lv, ref a); ClientToScreen(lv, ref b);
-                res.Add(t + "|" + a.X + "|" + a.Y + "|" + b.X + "|" + b.Y);
+                int[] m = LeaveAndMap(lv, seen, new int[] { a.X, a.Y, b.X, b.Y });
+                res.Add(t + "|" + m[0] + "|" + m[1] + "|" + m[2] + "|" + m[3]);
             }
         } finally {
             VirtualFreeEx(proc, mem, UIntPtr.Zero, 0x8000);
