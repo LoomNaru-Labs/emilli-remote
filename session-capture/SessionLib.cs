@@ -377,17 +377,9 @@ public static class SL {
         System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "start.txt"), startUnix.ToString());
         recThread = new Thread(delegate() {
             Aware();
-            var queue = new System.Collections.Concurrent.BlockingCollection<KeyValuePair<int, Bitmap>>(400);
-            Thread[] writers = new Thread[3];
-            for (int k = 0; k < writers.Length; k++) {
-                writers[k] = new Thread(delegate() {
-                    foreach (KeyValuePair<int, Bitmap> f in queue.GetConsumingEnumerable()) {
-                        f.Value.Save(System.IO.Path.Combine(dir, string.Format("frame-{0:D5}.png", f.Key)), ImageFormat.Png);
-                        f.Value.Dispose();
-                    }
-                });
-                writers[k].Start();
-            }
+            // Frames stay in memory while recording (no PNG work competing with the session);
+            // they are written out after the stop.
+            List<Bitmap> held = new List<Bitmap>();
             StringBuilder times = new StringBuilder("frame,ms\n");
             Stopwatch sw = Stopwatch.StartNew();
             double step = 1000.0 / fps;
@@ -399,11 +391,15 @@ public static class SL {
                 if (now - due > step) recLate++;
                 Bitmap b = Grab(x, y, w, h);
                 times.Append(i).Append(',').Append((long)sw.Elapsed.TotalMilliseconds).Append('\n');
-                queue.Add(new KeyValuePair<int, Bitmap>(i, b));
+                held.Add(b);
                 i++;
             }
-            queue.CompleteAdding();
-            foreach (Thread t in writers) t.Join();
+            System.Threading.Tasks.ParallelOptions po = new System.Threading.Tasks.ParallelOptions();
+            po.MaxDegreeOfParallelism = 4;
+            System.Threading.Tasks.Parallel.For(0, held.Count, po, delegate(int k) {
+                held[k].Save(System.IO.Path.Combine(dir, string.Format("frame-{0:D5}.png", k)), ImageFormat.Png);
+                held[k].Dispose();
+            });
             recFrames = i;
             System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "frames.csv"), times.ToString());
         });
