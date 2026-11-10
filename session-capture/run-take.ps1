@@ -404,14 +404,25 @@ Ask @{ op = 'park'; vx = $Region[0]; vy = $Region[1]; vw = $Region[2]; x = 300; 
 Start-Sleep -Milliseconds 900
 Ask @{ op = 'type-secret'; ms = 70 } 20 | Out-Null
 Mark 'password given'
-# Accepted = the store PC's desktop shows in the session window (its wallpaper colour appears).
-$loc = ''
-for ($i = 0; $i -lt 30; $i++) {
-    $loc = Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 20
-    if ($loc -like '*wallpaper box*') { break }
-    Start-Sleep -Milliseconds 300
+# Accepted = the store PC's desktop fills the session window: wallpaper colour across the whole
+# picture width and a picture that is not black.
+function Desktop-Shown {
+    $r = Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 20
+    $mm = [regex]::Match($r, 'wallpaper box (\d+),(\d+) to (\d+),(\d+).*not black (\d+)/1000')
+    if ($mm.Success -and ([int]$mm.Groups[3].Value - [int]$mm.Groups[1].Value) -ge ($s[2] - 40) -and [int]$mm.Groups[5].Value -ge 500) { return $r }
+    return $null
 }
-if ($loc -notlike '*wallpaper box*') { Debug-Shot 'not-accepted'; Ask @{ op = 'screen'; dir = $Debug; name = 'helper-not-accepted' } 20 | Out-Null; throw 'the store PC desktop did not appear in the session window' }
+$loc = $null
+for ($i = 0; $i -lt 16 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 400 } }
+if (-not $loc) {
+    # Once more: a click into the password prompt (centred in the session window), then the
+    # password again.
+    Ask @{ op = 'screen'; dir = $Debug; name = 'helper-password-retry' } 20 | Out-Null
+    Ask @{ op = 'type-secret'; ms = 70; clickx = ($Region[0] + [int]($Region[2] / 2)); clicky = ($Region[1] + [int]($Region[3] / 2) - 10) } 20 | Out-Null
+    Mark 'password given again'
+    for ($i = 0; $i -lt 20 -and -not $loc; $i++) { $loc = Desktop-Shown; if (-not $loc) { Start-Sleep -Milliseconds 400 } }
+}
+if (-not $loc) { Debug-Shot 'not-accepted'; Ask @{ op = 'screen'; dir = $Debug; name = 'helper-not-accepted' } 20 | Out-Null; throw 'the store PC desktop did not appear in the session window' }
 Mark 'store PC desktop shown in the session window'
 $cm = Wait-Until { Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' } } 10 300
 $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')

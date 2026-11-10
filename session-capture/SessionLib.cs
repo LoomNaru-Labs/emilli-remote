@@ -122,6 +122,13 @@ public static class SL {
         SetForegroundWindow(h);
     }
 
+    // Foreground without the Alt tap (an Alt tap can leave a window in its system-menu mode,
+    // where the next typed letters are taken as menu keys).
+    [DllImport("user32.dll")] static extern IntPtr GetForegroundWindow();
+    public static bool IsForeground(IntPtr h) { return GetForegroundWindow() == h; }
+    public static string ForegroundTitle() { return TitleOf(GetForegroundWindow()); }
+    public static void FrontNoAlt(IntPtr h) { BringWindowToTop(h); SetForegroundWindow(h); }
+
     public static void Topmost(IntPtr h, bool on) {
         SetWindowPos(h, new IntPtr(on ? -1 : -2), 0, 0, 0, 0, 0x0013);
     }

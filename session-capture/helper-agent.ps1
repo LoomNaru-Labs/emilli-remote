@@ -202,6 +202,10 @@ function Run($c) {
         }
         'type' { [SL]::TypeText([string]$c.text, [int]$c.ms); return "typed $($c.text.Length) characters" }
         'type-secret' {
+            $fg = [SL]::ForegroundTitle()
+            if (-not [SL]::IsForeground($state.Remote)) { [SL]::FrontNoAlt($state.Remote); Start-Sleep -Milliseconds 400 }
+            if ($c.clickx) { [SL]::Glide([int]$c.clickx, [int]$c.clicky, 400); Start-Sleep -Milliseconds 150; [SL]::Click($false); Start-Sleep -Milliseconds 300 }
+            Log "type-secret: foreground before '$fg', now '$([SL]::ForegroundTitle())'"
             $pw = (Get-Content -Path (Join-Path $Dir 'secret\pw.txt') -TotalCount 1).Trim()
             [SL]::TypeText($pw, [int]$c.ms)
             $n = $pw.Length; $pw = $null
@@ -225,8 +229,7 @@ function Run($c) {
             if ($i.Left -ne [int]$c.vx -or $i.Top -ne [int]$c.vy -or $i.Width -ne [int]$c.vw) {
                 [SL]::Place($state.Remote, [int]$c.x, [int]$c.y, [int]$c.w, [int]$c.h); $note = "moved from $($i.Left),$($i.Top) $($i.Width)x$($i.Height)"
             }
-            [SL]::Front($state.Remote)
-            return "$note; $([SL]::Info($state.Remote))"
+            return "$note; $([SL]::Info($state.Remote)); foreground '$([SL]::ForegroundTitle())'"
         }
         'close-remote' {
             [SL]::PostClose($state.Remote)
