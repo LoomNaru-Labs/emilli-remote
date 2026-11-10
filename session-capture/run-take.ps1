@@ -421,9 +421,19 @@ Ask @{ op = 'warm'; exe = $Exe; peer = $Peer; x = 300; y = 60; w = ($s[2] + 14);
 Start-Sleep -Seconds 2
 Step 'The helper opens the app (main window, idle)'
 Ask @{ op = 'open-main'; exe = $Exe; x = $Region[0]; y = $Region[1]; w = $Region[2]; h = $Region[3] } 60 | Out-Null
-Ask @{ op = 'find-connect' } 20 | Out-Null
+$cr = Ask @{ op = 'find-connect' } 20
 Ask @{ op = 'screen'; dir = $Shots; name = 'debug-helper-main' } 20 | Out-Null
 Copy-Item -Force "$Shots\debug-helper-main.png" $Debug -ErrorAction SilentlyContinue
+# The store PC's own pointer waits where the helper's pointer will be when the session shows
+# (the Connect button, under the session window's picture at +1,+32), so there is one pointer
+# that does not jump when the helper's recording stops drawing its own (SL.WithCursor).
+$cbm = [regex]::Match($cr, 'Connect button (\d+),(\d+) to (\d+),(\d+)')
+if ($cbm.Success) {
+    $sx0 = [int](([int]$cbm.Groups[1].Value + [int]$cbm.Groups[3].Value) / 2) - ($Region[0] + 1)
+    $sy0 = [int](([int]$cbm.Groups[2].Value + [int]$cbm.Groups[4].Value) / 2) - ($Region[1] + 32)
+    [SL]::Glide($sx0, $sy0, 60)
+    Note "store PC pointer placed at $sx0,$sy0"
+}
 
 # ---------------------------------------------------------------- 5. the take
 Step 'The take: Connect from the main window, then the fix through the session (both screens recorded)'
@@ -439,13 +449,13 @@ Ask @{ op = 'click-at'; what = 'field'; ms = 600 } 20 | Out-Null
 Mark 'address field clicked'
 Ask @{ op = 'type'; text = $Peer; ms = 80 } 20 | Out-Null
 Mark "address typed ($Peer)"
-Ask @{ op = 'click-at'; what = 'connect'; ms = 500 } 20 | Out-Null
+Ask @{ op = 'click-at'; what = 'connect'; ms = 400 } 20 | Out-Null
 Mark 'Connect clicked'
 Ask @{ op = 'wait-remote'; peer = $Peer; seconds = 20 } 30 | Out-Null
 Mark 'session window open (password prompt)'
 Ask @{ op = 'park'; vx = $Region[0]; vy = $Region[1]; vw = $Region[2]; x = 300; y = 60; w = ($s[2] + 14); h = ($s[3] + 41) } 10 | Out-Null
 Start-Sleep -Milliseconds 500
-Ask @{ op = 'type-secret'; ms = 70 } 20 | Out-Null
+Ask @{ op = 'type-secret'; ms = 55 } 20 | Out-Null
 Mark 'password given'
 # Accepted = the store PC's desktop fills the session window: wallpaper colour across the whole
 # picture width and a picture that is not black.
@@ -467,6 +477,7 @@ if (-not $loc) {
 }
 if (-not $loc) { Debug-Shot 'not-accepted'; Ask @{ op = 'screen'; dir = $Debug; name = 'helper-not-accepted' } 20 | Out-Null; throw 'the store PC desktop did not appear in the session window' }
 Mark 'store PC desktop shown in the session window'
+Ask @{ op = 'rec-cursor'; on = $false } 10 | Out-Null
 $cm = Wait-Until { Get-CimInstance Win32_Process -Filter "Name='rustdesk.exe'" | Where-Object { $_.CommandLine -like '*--cm*' } } 10 300
 $m = [regex]::Match($loc, 'wallpaper box (\d+),(\d+) to')
 if ($m.Success) { Ask @{ op = 'calib'; left = [int]$m.Groups[1].Value; top = ([int]$m.Groups[2].Value + 1); scale = 1.0 } 20 | Out-Null }
@@ -502,14 +513,14 @@ Mark 'Cancel chosen'
 $dlgText = ''
 $yes = Wait-Until { [SL]::DialogButtonRect('Yes', [ref]$dlgText) } 6 150
 if (-not $yes) { Debug-Shot 'confirm-missing'; throw 'the confirmation did not appear on the store PC' }
-Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 550
+Helper-Point ([int](($yes[0] + $yes[2]) / 2)) ([int](($yes[1] + $yes[3]) / 2)) 450
 Helper-Click
 Mark 'Yes: the stuck job is cancelled'
 
 # Navigation 2: print the document again, to the printer that works.
 $fm = [SL]::MenuBarItemRect($Notepad.Hwnd, 'File')
 if (-not $fm) { throw "Notepad's File menu was not found" }
-Helper-Point ([int](($fm[0] + $fm[2]) / 2)) ([int](($fm[1] + $fm[3]) / 2)) 700
+Helper-Point ([int](($fm[0] + $fm[2]) / 2)) ([int](($fm[1] + $fm[3]) / 2)) 550
 Helper-Click
 Mark 'Notepad: File menu'
 $printTexts = ''
@@ -537,7 +548,7 @@ if (-not $target) {
 }
 if (-not $target) { Debug-Shot 'printer-item-missing'; throw "'$($P.Printer)' not found in the Print dialog" }
 Note "Print dialog $([SL]::Info($dlg.Hwnd)); target row at $($target -join ',')"
-Helper-Point ([int](($target[0] + $target[2]) / 2)) ([int](($target[1] + $target[3]) / 2)) 600
+Helper-Point ([int](($target[0] + $target[2]) / 2)) ([int](($target[1] + $target[3]) / 2)) 450
 Helper-Click
 Start-Sleep -Milliseconds 300
 if ($plv -ne [IntPtr]::Zero) {
@@ -552,7 +563,7 @@ $pb = [SL]::DialogButtonRect('Print', [ref]$pbText)
 if (-not $pb) { Debug-Shot 'print-button-missing'; throw 'no Print button' }
 $sinkLog = Join-Path $Dir 'out\sink.log'
 $sinkBefore = @(Get-Content -Path $sinkLog -ErrorAction SilentlyContinue).Count
-Helper-Point ([int](($pb[0] + $pb[2]) / 2)) ([int](($pb[1] + $pb[3]) / 2)) 550
+Helper-Point ([int](($pb[0] + $pb[2]) / 2)) ([int](($pb[1] + $pb[3]) / 2)) 450
 Helper-Click
 Mark 'Print clicked'
 # Through = the stand-in printer received the job (its own log), whatever the queue then shows.
@@ -566,7 +577,7 @@ Mark "printed: the job went through to '$($P.Printer)'"
 $shown = $null
 if ($gqList -ne [IntPtr]::Zero) { $shown = Wait-Until { @([SL]::ListViewItems($gqList, 1)) | Where-Object { $_ -like 'Printed|*' } | Select-Object -First 1 } 4 150 }
 if ($shown) { Mark "'$($P.Printer)' queue shows Printed" } else { Note "the working queue's Status column: $(@([SL]::ListViewItems($gqList, 1)) -join ' / ')" }
-Start-Sleep -Milliseconds 1100
+Start-Sleep -Milliseconds 700
 Mark 'end'
 
 # The cut: 16 to 22 s (addendum 2), the same still time before the first mark and after the last.

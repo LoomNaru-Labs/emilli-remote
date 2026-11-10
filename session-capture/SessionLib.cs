@@ -252,14 +252,18 @@ public static class SL {
 
     // Screen grabs include the mouse pointer where the screen shows it, as screen recorders do
     // (a plain screen copy leaves the pointer out).
+    // On the helper's side it is switched off once the store PC's desktop shows in the session
+    // window: from then on the session picture itself carries the store PC's pointer, and the
+    // helper's own pointer (the app gives it the same shape) would show a second arrow.
     public static bool WithCursor = true;
 
-    public static Bitmap Grab(int x, int y, int w, int h) {
+    public static Bitmap Grab(int x, int y, int w, int h) { return Grab(x, y, w, h, WithCursor); }
+    public static Bitmap Grab(int x, int y, int w, int h, bool cursor) {
         Aware();
         Bitmap b = new Bitmap(w, h, PixelFormat.Format24bppRgb);
         using (Graphics g = Graphics.FromImage(b)) {
             g.CopyFromScreen(x, y, 0, 0, new Size(w, h));
-            if (WithCursor) {
+            if (cursor) {
                 CURSORINFO ci = new CURSORINFO(); ci.cbSize = Marshal.SizeOf(typeof(CURSORINFO));
                 if (GetCursorInfo(ref ci) && (ci.flags & 1) != 0 && ci.hCursor != IntPtr.Zero) {
                     ICONINFO ii;
@@ -320,10 +324,7 @@ public static class SL {
     // Bounding box (screen pixels) of the pixels within tol of the colour, inside the region.
     // Returns left, top, right, bottom, count; count 0 when nothing matched.
     public static int[] ColorBox(int x, int y, int w, int h, int red, int green, int blue, int tol) {
-        bool keep = WithCursor; WithCursor = false;
-        Bitmap grabbed = Grab(x, y, w, h);
-        WithCursor = keep;
-        using (Bitmap b = grabbed) {
+        using (Bitmap b = Grab(x, y, w, h, false)) {
             BitmapData d = b.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
             byte[] px = new byte[d.Stride * h];
             Marshal.Copy(d.Scan0, px, 0, px.Length);

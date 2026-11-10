@@ -45,6 +45,8 @@ function Run($c) {
         'pointer' { return [SL]::SetPointerPixels([int]$c.px) }
         # The pointer shown now (over the session window: the store PC's pointer as the app draws it).
         'cursor' { return "pointer now $([SL]::PointerPixels())" }
+        # Whether the recording draws the helper's own pointer (see SL.WithCursor).
+        'rec-cursor' { [SL]::WithCursor = [bool]$c.on; return "own pointer in the recording: $([SL]::WithCursor)" }
         'windows' {
             return (([SL]::Windows() | ForEach-Object { $_.ToString() }) -join "`n")
         }
