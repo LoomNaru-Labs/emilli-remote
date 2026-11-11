@@ -24,9 +24,12 @@
 # the store PC changes after page B appears).
 # Plain ASCII on purpose (Windows PowerShell 5.1).
 param(
-    [Parameter(Mandatory)] [string] $Setup,
+    [string] $Setup = '',
     [Parameter(Mandatory)] [string] $Out,
-    [string] $Only = $env:BLUR_ONLY
+    [string] $Only = $env:BLUR_ONLY,
+    # Attempt 4: upstream's own installer (rustdesk-<version>-x86_64.exe) instead of our Setup,
+    # to see whether upstream's later fix clears what attempt 3 found.
+    [string] $Official = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -55,12 +58,12 @@ $AfterMs = 12000
 # a one-step page change. Attempt 3 measures what upstream changed in 1.5.1 ("improve clarity
 # after scrolling by re-encoding static frames", rustdesk/rustdesk#16128): a tall list scrolled
 # for 1.5 s (510 pixels at 340 pixels a second), then still; the clock starts when it stops.
+# Attempt 4 (upstream 1.5.3 only): the settings that stayed blurry in attempt 3, plus Auto.
 $Settings = @(
-    @{ name = 'balanced-auto'; q = 'balanced'; codec = 'auto' },
     @{ name = 'balanced-vp9';  q = 'balanced'; codec = 'vp9' },
+    @{ name = 'custom17-vp9';  q = 'custom';   codec = 'vp9'; custom = 17 },
     @{ name = 'balanced-vp8';  q = 'balanced'; codec = 'vp8' },
-    @{ name = 'best-auto';     q = 'best';     codec = 'auto' },
-    @{ name = 'custom17-vp9';  q = 'custom';   codec = 'vp9'; custom = 17 }
+    @{ name = 'balanced-auto'; q = 'balanced'; codec = 'auto' }
 )
 $Modes = @('scroll-ticker', 'scroll-still')
 
@@ -208,15 +211,32 @@ if ($Throttle) {
 if ($Only) { $Settings = @($Settings | Where-Object { $Only.Split(',') -contains $_.name }) }
 
 # ---------------------------------------------------------------- 1. Emilli Remote as a store PC
-Step 'Install Emilli Remote Setup as a store PC (silent, throwaway password)'
 $pwFile = Join-Path $Dir 'secret\pw.txt'
 [System.IO.File]::WriteAllText($pwFile, (New-Secret 10))
+if ($Official) {
+    # The same steps our Setup takes (windows-easy/EmilliRemoteSetup.iss on easy-windows), with
+    # upstream's installer and no server: direct access only.
+    Step "Install upstream's $([System.IO.Path]::GetFileName($Official)) as a store PC (silent, throwaway password)"
+    $proc = Start-Process -FilePath $Official -PassThru -WorkingDirectory "$env:SystemRoot\System32" -ArgumentList @('--silent-install')
+    $proc.WaitForExit(300000) | Out-Null
+    $inst = Wait-Until { (Test-Path $Exe) -and (Get-Service -Name RustDesk -ErrorAction SilentlyContinue | Where-Object { $_.Status -eq 'Running' }) } 300 2000
+    if (-not $inst) { throw 'upstream RustDesk was not installed with a running service' }
+    Start-Sleep -Seconds 5
+    cmd /c "`"$Exe`" --option verification-method use-permanent-password 2>&1" | Out-Null
+    cmd /c "`"$Exe`" --option approve-mode password 2>&1" | Out-Null
+    $pwNow = ([System.IO.File]::ReadAllText($pwFile)).Trim()
+    $said = cmd /c "`"$Exe`" --password $pwNow 2>&1"
+    $pwNow = $null
+    Note "password set: '$said'; verification-method '$(cmd /c "`"$Exe`" --option verification-method 2>nul")'"
+} else {
+Step 'Install Emilli Remote Setup as a store PC (silent, throwaway password)'
 $setupLog = Join-Path $Debug 'setup.log'
 $proc = Start-Process -FilePath $Setup -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MODE=store', "/PWFILE=$pwFile", "/LOG=$setupLog")
 if (-not $proc.WaitForExit(600000)) { throw 'Setup did not finish in 10 minutes' }
 Note "Setup exit code $($proc.ExitCode)"
 if (Test-Path $setupLog) { Select-String -Path $setupLog -SimpleMatch 'Emilli:' | ForEach-Object { Note $_.Line.Trim() } }
 if ($proc.ExitCode -ne 0) { throw 'Setup failed' }
+}
 Note "rustdesk.exe $((Get-Item $Exe).VersionInfo.FileVersion), $((Get-Item $Exe).Length) bytes"
 
 Step 'Direct access on (port 21118) and one Windows session served (no session picker)'

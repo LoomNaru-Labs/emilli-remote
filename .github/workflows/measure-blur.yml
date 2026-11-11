@@ -34,6 +34,10 @@ env:
   SETUP_RUN_ID: "42238316722"
   SETUP_SHA256: 48bacd9ce54f31db8d4c60bcd8fedb82d2ad06fba54f86fc5ef05fa6c050bc83
   RETENTION_DAYS: 3
+  # Attempt 4: upstream's own 1.5.3 installer (release asset, SHA-256 as GitHub lists it), to
+  # check upstream's later fix against what attempt 3 found in our 1.5.0.
+  OFFICIAL_URL: https://github.com/rustdesk/rustdesk/releases/download/1.5.3/rustdesk-1.5.3-x86_64.exe
+  OFFICIAL_SHA256: 523ba0efbf62a21739961b62c7daaffb44d3da86139c546b364fd4e1333ed249
 
 jobs:
   measure:
@@ -67,6 +71,15 @@ jobs:
           if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
           # Keep the runner away from our real server: no runner device on rd.emillis.net.
           Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
+          # Upstream's installer: checked, and kept away from RustDesk's public servers too.
+          New-Item -ItemType Directory -Force -Path official | Out-Null
+          Invoke-WebRequest -Uri $env:OFFICIAL_URL -OutFile official\rustdesk-1.5.3-x86_64.exe -UseBasicParsing
+          $oh = (Get-FileHash -Algorithm SHA256 official\rustdesk-1.5.3-x86_64.exe).Hash.ToLower()
+          Write-Host "upstream installer SHA-256 $oh"
+          if ($oh -ne $env:OFFICIAL_SHA256) { throw "This is not upstream's 1.5.3 installer" }
+          foreach ($h in @('rs-ny.rustdesk.com', 'rs-sg.rustdesk.com', 'rs-cn.rustdesk.com', 'api.rustdesk.com', 'admin.rustdesk.com')) {
+            Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "127.0.0.1 $h"
+          }
           ipconfig /flushdns | Out-Null
           Write-Host "Windows $([Environment]::OSVersion.VersionString); session $((Get-Process -Id $PID).SessionId); user $env:USERNAME"
 
@@ -78,7 +91,7 @@ jobs:
         shell: powershell
         env:
           BLUR_ONLY: ${{ github.event.inputs.only }}
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File blur-measure\measure-blur.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\blur"
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File blur-measure\measure-blur.ps1 -Official "$env:GITHUB_WORKSPACE\official\rustdesk-1.5.3-x86_64.exe" -Out "$env:RUNNER_TEMP\blur"
 
       - name: Keep the numbers and the pictures
         if: always()
