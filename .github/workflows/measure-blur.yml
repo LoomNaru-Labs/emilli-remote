@@ -1,0 +1,90 @@
+# How long an Emilli Remote session picture stays blurry after the screen changes, per image
+# quality mode and codec (brief REMOTE-BLUR). Measurement only: nothing is built or released.
+#
+# One fresh windows-latest runner plays both PCs as in capture-session.yml: the console session
+# is the store PC with the tested Emilli Remote Setup (1.5.0, our build) installed as a store PC,
+# a second Windows session is the helper, who connects to 127.0.0.1 by direct access.
+# rd.emillis.net is blocked in the hosts file, so nothing reaches our server; no account of ours
+# is used. A loopback is not a slow internet line. Results kept 3 days.
+name: Measure session blur
+
+on:
+  workflow_dispatch:
+    inputs:
+      only:
+        description: "Comma-separated setting names to run (empty: all)"
+        required: false
+        default: ""
+  push:
+    branches: [remote-blur]
+    paths:
+      - "blur-measure/**"
+      - ".github/workflows/measure-blur.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: measure-blur-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  VERSION: "1.5.0"
+  SETUP_RUN_ID: "42238316722"
+  SETUP_SHA256: 48bacd9ce54f31db8d4c60bcd8fedb82d2ad06fba54f86fc5ef05fa6c050bc83
+  RETENTION_DAYS: 3
+
+jobs:
+  measure:
+    name: Blur after a page change (all settings)
+    runs-on: windows-latest
+    timeout-minutes: 85
+    steps:
+      - name: Checkout the measurement scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: |
+            blur-measure
+            session-capture
+            windows-capture
+          persist-credentials: false
+
+      - name: Download the tested setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: setup
+          run-id: ${{ env.SETUP_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Check the setup and prepare the runner
+        shell: powershell
+        run: |
+          $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+          Write-Host "Setup SHA-256 $hash"
+          if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          # Keep the runner away from our real server: no runner device on rd.emillis.net.
+          Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
+          ipconfig /flushdns | Out-Null
+          Write-Host "Windows $([Environment]::OSVersion.VersionString); session $((Get-Process -Id $PID).SessionId); user $env:USERNAME"
+
+      - name: Display 1920x1080 at 100%
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
+
+      - name: Measure
+        shell: powershell
+        env:
+          BLUR_ONLY: ${{ github.event.inputs.only }}
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File blur-measure\measure-blur.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Out "$env:RUNNER_TEMP\blur"
+
+      - name: Keep the numbers and the pictures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: blur-measure
+          path: ${{ runner.temp }}/blur
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn
