@@ -32,9 +32,9 @@ $words = @('Bulgogi', 'Galbi', 'Samgyeopsal', 'Kimchi', 'Japchae', 'Bibimbap', '
            'Short rib', 'Brisket', 'Ramen', 'Cold noodles', 'Pancake', 'Soup', 'Stew', 'Dessert')
 $names = @('Kim', 'Lee', 'Park', 'Choi', 'Jung', 'Kang', 'Cho', 'Yoon', 'Jang', 'Lim', 'Han', 'Oh')
 
-function New-Page([int] $Seed, [string] $Title) {
+function New-Page([int] $Seed, [string] $Title, [int] $PageH = $H) {
     $rnd = New-Object System.Random $Seed
-    $bmp = New-Object System.Drawing.Bitmap $W, $H, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
+    $bmp = New-Object System.Drawing.Bitmap $W, $PageH, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $g = [System.Drawing.Graphics]::FromImage($bmp)
     $g.Clear([System.Drawing.Color]::White)
     # Grey-scale smoothing (no ClearType colour fringes), as a plain line-of-business screen.
@@ -55,7 +55,7 @@ function New-Page([int] $Seed, [string] $Title) {
     $y += 22
     $g.DrawLine($line, 20, $y - 3, $W - 20, $y - 3)
     $row = 1
-    while ($y -lt $H - 40) {
+    while ($y -lt $PageH - 40) {
         $qty = $rnd.Next(1, 9); $price = $rnd.Next(300, 4800) / 100.0
         $vals = @(('{0:D3}' -f $row), $words[$rnd.Next($words.Count)], "$qty", ('{0:N2}' -f $price), ('{0:N2}' -f ($qty * $price)),
                   ('{0}{1}' -f [char](65 + $rnd.Next(4)), $rnd.Next(1, 41)), $names[$rnd.Next($names.Count)],
@@ -75,7 +75,7 @@ function New-Page([int] $Seed, [string] $Title) {
     return $bmp
 }
 
-$pages = @{ A = (New-Page 11 'Sales by item, lunch'); B = (New-Page 29 'Open checks, dinner') }
+$pages = @{ A = (New-Page 11 'Sales by item, lunch'); B = (New-Page 29 'Open checks, dinner'); T = (New-Page 47 'All checks, today' (2 * $H)) }
 
 $form = New-Object System.Windows.Forms.Form
 $form.FormBorderStyle = 'None'
@@ -89,14 +89,26 @@ $pic.Dock = 'Fill'
 $pic.SizeMode = 'Normal'
 $pic.Image = $pages.A
 $form.Controls.Add($pic)
+# The tall page T (twice the screen's height) for the scroll test: shown from its top, then moved
+# up by ScrollPx at ScrollSpeed pixels a second, as a list scrolled with the mouse wheel.
+$picT = New-Object System.Windows.Forms.PictureBox
+$picT.SizeMode = 'Normal'
+$picT.Image = $pages.T
+$picT.Bounds = New-Object System.Drawing.Rectangle 0, 0, $W, (2 * $H)
+$picT.Visible = $false
+$form.Controls.Add($picT)
 $tick = New-Object System.Windows.Forms.Panel
 $tick.Bounds = New-Object System.Drawing.Rectangle 4, 4, 16, 16
 $tick.BackColor = [System.Drawing.Color]::White
-$pic.Controls.Add($tick)
+$form.Controls.Add($tick)
+$tick.BringToFront()
+$ScrollPx = 510
+$ScrollSpeed = 340.0
 
 $script:lastWrite = [DateTime]::MinValue
 $script:ticking = $false
 $script:lastTick = 0
+$script:scrollFrom = 0
 
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 15
@@ -104,6 +116,14 @@ $timer.Add_Tick({
     if ($script:ticking -and ((Now-Ms) - $script:lastTick) -ge 500) {
         $tick.BackColor = if ($tick.BackColor.R -gt 128) { [System.Drawing.Color]::Black } else { [System.Drawing.Color]::White }
         $script:lastTick = Now-Ms
+    }
+    if ($script:scrollFrom -gt 0) {
+        $off = [Math]::Min($ScrollPx, [int](((Now-Ms) - $script:scrollFrom) * $ScrollSpeed / 1000.0))
+        if ($picT.Top -ne -$off) { $picT.Top = -$off; $form.Update() }
+        if ($off -ge $ScrollPx) {
+            Write-Answer ("scroll {0} {1}" -f $script:scrollFrom, (Now-Ms))
+            $script:scrollFrom = 0
+        }
     }
     if (-not (Test-Path $Signal)) { return }
     $lw = (Get-Item $Signal).LastWriteTimeUtc
@@ -115,8 +135,11 @@ $timer.Add_Tick({
     if (-not $cmd) { return }
     $script:lastWrite = $lw
     switch ($cmd) {
-        'A' { $pic.Image = $pages.A; $pic.Refresh() }
-        'B' { $pic.Image = $pages.B; $pic.Refresh() }
+        'A' { $picT.Visible = $false; $pic.Visible = $true; $pic.Image = $pages.A; $pic.Refresh() }
+        'B' { $picT.Visible = $false; $pic.Visible = $true; $pic.Image = $pages.B; $pic.Refresh() }
+        'T' { $picT.Top = 0; $picT.Visible = $true; $picT.BringToFront(); $tick.BringToFront(); $pic.Visible = $false; $form.Refresh() }
+        # The answer comes when the scroll ends ("scroll <start> <end>").
+        'scroll' { $script:scrollFrom = Now-Ms; return }
         'tick-on' { $script:ticking = $true }
         'tick-off' { $script:ticking = $false; $tick.BackColor = [System.Drawing.Color]::White; $tick.Refresh() }
         'quit' { $form.Close() }

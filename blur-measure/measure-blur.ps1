@@ -51,15 +51,18 @@ $AfterMs = 12000
 # 0.1 to 0.2 for Low and Custom). The same bitrate is set here with Custom quality: 17 (0.34,
 # the Balanced floor) and 10 (0.2), per codec. Balanced VP9 "still" is repeated (attempt 1 lost
 # it to a signal-file race in text-pages.ps1).
+# Attempt 2 (run 42932699115): even at the floor every codec was sharp from its first frame after
+# a one-step page change. Attempt 3 measures what upstream changed in 1.5.1 ("improve clarity
+# after scrolling by re-encoding static frames", rustdesk/rustdesk#16128): a tall list scrolled
+# for 1.5 s (510 pixels at 340 pixels a second), then still; the clock starts when it stops.
 $Settings = @(
-    @{ name = 'custom17-auto'; q = 'custom'; codec = 'auto'; custom = 17 },
-    @{ name = 'custom17-vp9';  q = 'custom'; codec = 'vp9';  custom = 17 },
-    @{ name = 'custom17-vp8';  q = 'custom'; codec = 'vp8';  custom = 17 },
-    @{ name = 'custom10-auto'; q = 'custom'; codec = 'auto'; custom = 10 },
-    @{ name = 'custom10-vp9';  q = 'custom'; codec = 'vp9';  custom = 10 },
-    @{ name = 'balanced-vp9';  q = 'balanced'; codec = 'vp9' }
+    @{ name = 'balanced-auto'; q = 'balanced'; codec = 'auto' },
+    @{ name = 'balanced-vp9';  q = 'balanced'; codec = 'vp9' },
+    @{ name = 'balanced-vp8';  q = 'balanced'; codec = 'vp8' },
+    @{ name = 'best-auto';     q = 'best';     codec = 'auto' },
+    @{ name = 'custom17-vp9';  q = 'custom';   codec = 'vp9'; custom = 17 }
 )
-$Modes = @('ticker', 'still')
+$Modes = @('scroll-ticker', 'scroll-still')
 
 $Results = New-Object System.Collections.ArrayList
 
@@ -337,6 +340,15 @@ function Send-Page([string] $Cmd, [int] $Seconds = 10) {
     if (-not $line -or $line -notmatch "^$Cmd (\d+)$") { throw "the pages window did not answer '$Cmd' ($line)" }
     return [int64]$Matches[1]
 }
+# The scroll: the answer is "scroll <start> <end>" once the list has stopped.
+function Send-Scroll {
+    $before = if (Test-Path $Answer) { @(Get-Content $Answer).Count } else { 0 }
+    Start-Sleep -Milliseconds 30
+    [System.IO.File]::WriteAllText($Signal, 'scroll')
+    $line = Wait-Until { try { $all = @([System.IO.File]::ReadAllLines($Answer)); if ($all.Count -gt $before) { $all[$all.Count - 1] } } catch { $null } } 15 20
+    if (-not $line -or $line -notmatch '^scroll (\d+) (\d+)$') { throw "the pages window did not answer 'scroll' ($line)" }
+    return @([int64]$Matches[1], [int64]$Matches[2])
+}
 Send-Page 'A' | Out-Null
 Send-Page 'tick-on' | Out-Null
 Start-Sleep -Seconds 2
@@ -369,7 +381,8 @@ function Measure-One($Set, [string] $Mode) {
         New-NetQosPolicy -Name 'BlurSession' -IPPortMatchCondition 21118 -ThrottleRateActionBitsPerSecond ([int64]$Set.mbit * 1000000) -PolicyStore ActiveStore | Out-Null
         Note "QoS policy on port 21118: $($Set.mbit) Mbit/s"
     }
-    Send-Page 'A' | Out-Null
+    $scroll = $Mode -like 'scroll*'
+    Send-Page $(if ($scroll) { 'T' } else { 'A' }) | Out-Null
     Send-Page 'tick-on' | Out-Null
     $t0 = Now-Ms
     Ask @{ op = 'connect'; exe = $Exe; peer = $Peer; seconds = 40 } 120 | Out-Null
@@ -388,11 +401,18 @@ function Measure-One($Set, [string] $Mode) {
     $work = Join-Path $Dir "rec\$tag"
     New-Item -ItemType Directory -Force -Path $work | Out-Null
     [SL]::ShotScreen((Join-Path $work 'truth-a.png')) | Out-Null
-    if ($Mode -eq 'still') { Send-Page 'tick-off' | Out-Null; Start-Sleep -Milliseconds 1500 }
+    if ($Mode -like '*still') { Send-Page 'tick-off' | Out-Null; Start-Sleep -Milliseconds 1500 }
     $frames = Join-Path $work 'frames'
     Ask @{ op = 'rec-start'; dir = $frames; fps = $Fps; x = ($loc[0] + $Cx - $Pad); y = ($loc[1] + $Cy - $Pad); w = ($Cw + 2 * $Pad); h = ($Ch + 2 * $Pad) } 20 | Out-Null
     Start-Sleep -Milliseconds 1600
-    $switch = Send-Page 'B'
+    if ($scroll) {
+        $sc = Send-Scroll
+        $changeAt = $sc[0]; $switch = $sc[1]
+        Note "scrolled from $changeAt to $switch ($($switch - $changeAt) ms)"
+    } else {
+        $switch = Send-Page 'B'
+        $changeAt = $switch
+    }
     Start-Sleep -Milliseconds 500
     [SL]::ShotScreen((Join-Path $work 'truth-b.png')) | Out-Null
     $wait = $switch + $AfterMs - (Now-Ms)
@@ -409,7 +429,7 @@ function Measure-One($Set, [string] $Mode) {
     $tb = Gray-Of (Join-Path $work 'truth-b.png')
     $start = [int64](Get-Content (Join-Path $frames 'start.txt'))
     $rows = @(Import-Csv (Join-Path $frames 'frames.csv'))
-    $pre = @($rows | Where-Object { ($start + [int64]$_.ms) -lt ($switch - 100) })
+    $pre = @($rows | Where-Object { ($start + [int64]$_.ms) -lt ($changeAt - 100) })
     if ($pre.Count -lt 3) { throw "too few frames before the switch ($tag)" }
     $al = [Sharp]::Align((Join-Path $frames ('frame-{0:D5}.png' -f [int]$pre[$pre.Count - 1].frame)), $ta, $Cw, $Ch, $Pad)
     Note "alignment: offset $($al[0] - $Pad),$($al[1] - $Pad); mean difference $($al[2] / 1000.0) on page A"
@@ -421,7 +441,8 @@ function Measure-One($Set, [string] $Mode) {
         [void]$table.Add([pscustomobject]@{ frame = [int]$row.frame; t_ms = $t; diff_b = [Math]::Round([Sharp]::Mae($g, $tb), 3); diff_a = [Math]::Round([Sharp]::Mae($g, $ta), 3); bad_b = [Math]::Round([Sharp]::Bad($g, $tb), 2) })
     }
     $table | Export-Csv -NoTypeInformation -Path (Join-Path $Out "$tag-frames.csv")
-    $before = @($table | Where-Object { $_.t_ms -ge -1400 -and $_.t_ms -le -100 })
+    $c0 = $changeAt - $switch
+    $before = @($table | Where-Object { $_.t_ms -ge ($c0 - 1400) -and $_.t_ms -le ($c0 - 100) })
     $base = ($before | Sort-Object diff_a | Select-Object -Index ([int]($before.Count / 2))).diff_a
     $after = @($table | Where-Object { $_.t_ms -ge 0 } | Sort-Object t_ms)
     $limit = $base * 1.25 + 0.25
