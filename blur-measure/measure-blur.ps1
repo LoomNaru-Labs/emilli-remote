@@ -44,15 +44,20 @@ $Cx = 320; $Cy = 180; $Cw = 1280; $Ch = 720; $Pad = 4
 $AfterMs = 12000
 
 # image_quality / codec-preference / custom_image_quality as the app's Display settings store them.
+# Attempt 1 (run 42928158910) measured the four quality modes and the three codecs at full speed:
+# every one was sharp from its first frame on the loopback. Attempt 2 measures the state a slow
+# line pushes the session into: the app's own speed control (src/server/video_qos.rs) lowers the
+# bitrate to its floor, about half of Balanced (min_ratio: 0.335 of the base bitrate for Balanced,
+# 0.1 to 0.2 for Low and Custom). The same bitrate is set here with Custom quality: 17 (0.34,
+# the Balanced floor) and 10 (0.2), per codec. Balanced VP9 "still" is repeated (attempt 1 lost
+# it to a signal-file race in text-pages.ps1).
 $Settings = @(
-    @{ name = 'balanced-auto'; q = 'balanced'; codec = 'auto' },
-    @{ name = 'best-auto';     q = 'best';     codec = 'auto' },
-    @{ name = 'low-auto';      q = 'low';      codec = 'auto' },
-    @{ name = 'custom100-auto'; q = 'custom';  codec = 'auto'; custom = 100 },
-    @{ name = 'balanced-vp8';  q = 'balanced'; codec = 'vp8' },
-    @{ name = 'balanced-vp9';  q = 'balanced'; codec = 'vp9' },
-    @{ name = 'balanced-av1';  q = 'balanced'; codec = 'av1' },
-    @{ name = 'best-vp9';      q = 'best';     codec = 'vp9' }
+    @{ name = 'custom17-auto'; q = 'custom'; codec = 'auto'; custom = 17 },
+    @{ name = 'custom17-vp9';  q = 'custom'; codec = 'vp9';  custom = 17 },
+    @{ name = 'custom17-vp8';  q = 'custom'; codec = 'vp8';  custom = 17 },
+    @{ name = 'custom10-auto'; q = 'custom'; codec = 'auto'; custom = 10 },
+    @{ name = 'custom10-vp9';  q = 'custom'; codec = 'vp9';  custom = 10 },
+    @{ name = 'balanced-vp9';  q = 'balanced'; codec = 'vp9' }
 )
 $Modes = @('ticker', 'still')
 
@@ -448,7 +453,7 @@ function Measure-One($Set, [string] $Mode) {
     $pics = Join-Path $Out 'frames'
     New-Item -ItemType Directory -Force -Path $pics | Out-Null
     [Sharp]::SaveCrop((Join-Path $work 'truth-b.png'), $Cx, $Cy, $Cw, $Ch, (Join-Path $pics "$tag-truth-b.png"))
-    foreach ($p in @(250, 1000, 3000, 11500)) {
+    foreach ($p in @(250, 500, 1000, 2000, 3000, 5000, 11500)) {
         $f = $at[$p]
         if (-not $f) { $f = $after | Sort-Object { [Math]::Abs($_.t_ms - $p) } | Select-Object -First 1 }
         [Sharp]::SaveCrop((Join-Path $frames ('frame-{0:D5}.png' -f $f.frame)), $al[0], $al[1], $Cw, $Ch, (Join-Path $pics ('{0}-at-{1}ms.png' -f $tag, $f.t_ms)))

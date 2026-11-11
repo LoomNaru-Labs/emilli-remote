@@ -108,9 +108,12 @@ $timer.Add_Tick({
     if (-not (Test-Path $Signal)) { return }
     $lw = (Get-Item $Signal).LastWriteTimeUtc
     if ($lw -eq $script:lastWrite) { return }
-    $script:lastWrite = $lw
     $cmd = ''
+    # Attempt 1 lost a command here: the file was still being written, the read failed and the
+    # change was already marked as seen. Now it is marked only after a good read.
     try { $cmd = ([System.IO.File]::ReadAllText($Signal)).Trim() } catch { return }
+    if (-not $cmd) { return }
+    $script:lastWrite = $lw
     switch ($cmd) {
         'A' { $pic.Image = $pages.A; $pic.Refresh() }
         'B' { $pic.Image = $pages.B; $pic.Refresh() }
