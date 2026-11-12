@@ -1,7 +1,7 @@
 # Builds Emilli Remote (RustDesk configured for rd.emillis.net) for Mac and iPhone
 # on GitHub-hosted macOS runners.
 #
-# The steps, tool versions and pinned actions are copied from upstream RustDesk 1.5.0:
+# The steps, tool versions and pinned actions are copied from upstream RustDesk 1.5.0 (apple-153: on 1.5.3 source, same tools):
 # .github/workflows/bridge.yml and the jobs build-for-macOS (aarch64) and
 # build-rustdesk-ios in .github/workflows/flutter-build.yml (see the first commit).
 #
@@ -18,7 +18,7 @@ on:
         options: [both, mac, iphone]
         default: both
   push:
-    branches: [main]
+    branches: [apple-153]
     # Text-only changes do not need a new build.
     paths-ignore:
       - "docs/**"
@@ -35,7 +35,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERSION: "1.5.0"
+  VERSION: "1.5.3"
   RUST_VERSION: "1.75"
   MAC_RUST_VERSION: "1.81"
   FLUTTER_VERSION: "3.24.5"
@@ -126,7 +126,7 @@ jobs:
     # macos-14 runners are no longer offered (2026-11-06: "macos-14-arm64-us-default is not supported").
     runs-on: macos-15
     env:
-      # Branch apple-emilli (icon check): signing and notarisation stay off here, whatever
+      # Branch apple-emilli and apple-153 (compile and icon check): signing and notarisation stay off here, whatever
       # secrets exist; main keeps the signing gate.
       MAC_SIGNING: "false"
       APP_PATH: ./flutter/build/macos/Build/Products/Release/Emilli Remote.app
@@ -384,7 +384,7 @@ jobs:
     if: inputs.apps != 'mac'
     runs-on: macos-latest
     env:
-      # Branch apple-emilli (icon check): no signing and no TestFlight upload here.
+      # Branch apple-emilli and apple-153 (compile and icon check): no signing and no TestFlight upload here.
       IOS_SIGNING: "false"
     steps:
       - name: Export GitHub Actions cache environment variables
