@@ -1,24 +1,24 @@
-Emilli Remote for Android ("Emilli 원격"), branch android-play
-==============================================================
+Emilli Remote for Android ("Emilli 원격"), branch android-153
+=============================================================
 
 This branch is the complete corresponding source of the Android app
-"Emilli 원격" (package net.emillis.remote) that LoomNaru Labs Inc builds for
-Google Play, version 1.5.0, versionCode 72. It is a modified version of
-RustDesk, the open source remote desktop software by Purslane Tech Pte. Ltd.
-and the RustDesk contributors (https://github.com/rustdesk/rustdesk).
-RustDesk is licensed under the GNU Affero General Public License, version 3
-(AGPL-3.0); see the file LICENCE. This modified version is distributed under
-the same licence, without any warranty.
+"Emilli 원격" (package net.emillis.remote) that LoomNaru Labs Inc builds,
+version 1.5.3, versionCode 73. It is a modified version of RustDesk, the open
+source remote desktop software by Purslane Tech Pte. Ltd. and the RustDesk
+contributors (https://github.com/rustdesk/rustdesk). RustDesk is licensed
+under the GNU Affero General Public License, version 3 (AGPL-3.0); see the
+file LICENCE. This modified version is distributed under the same licence,
+without any warranty.
 
-Base: RustDesk tag 1.5.0, commit fada664df7a294d1d1a9ca3e7cd3637069122f17,
-with libs/hbb_common at commit 229b904508364c8997aad0fb5af57effac859f60
-(https://github.com/rustdesk/hbb_common) included as plain files (the
-first commit of this branch, shared with main).
+Base: RustDesk tag 1.5.3, commit 95cca3f661f635b3cc85c04935fe8d96d8f432ef,
+with libs/hbb_common at commit fae47e024dd83cef6aaecde0aa7d11731df11649
+(https://github.com/rustdesk/hbb_common) included as plain files (the import
+commit, whose parent is the 1.5.0 import shared with main and android-play).
+The same changes on 1.5.0 are on branch android-play.
 
 Changes, each in its own commit after the base:
 
-1. .github/workflows: upstream's workflows are removed (this branch is
-   source only).
+1. .github/workflows: upstream's workflows are removed.
 2. libs/hbb_common/src/config.rs: the built-in ID server is rd.emillis.net
    and the built-in public key is that server's key.
 3. flutter/android/app/build.gradle, AndroidManifest.xml: package
@@ -32,23 +32,27 @@ Changes, each in its own commit after the base:
    Accessibility service does, that it reads the focused text field only to
    type into it, and that nothing it reads is stored or sent.
 7. flutter/android/app/src/main/res: Emilli launcher and notification icons
-   and the icon background colour; flutter/pubspec.yaml: version 1.5.0+71.
+   and the icon background colour.
 8. build-android/: the build recipe (Docker toolchain, build steps, the same
-   changes as patch files, the icon drawing script). NOTICE and
-   .github/README.md are new.
+   changes as patch files for the 1.5.0 recipe, the icon drawing script).
+   NOTICE and .github/README.md are new.
 9. flutter/android/app/src/main/res/drawable/floating_window.xml and
    flutter/assets/icon.svg: the Emilli Remote drawing replaces RustDesk's logo
    in the floating window and the in-app icon; AndroidManifest.xml and
    res/values/strings.xml: the Accessibility service is named "Emilli 원격 입력"
-   and its description and the app_name string say Emilli; flutter/pubspec.yaml:
-   version 1.5.0+72.
-10. .github/workflows/capture-android.yml and build-android/capture/: a
-   screenshot workflow for the Emilli Remote manual (x86_64 build for the
-   Android emulator, signed with a throwaway key, never published).
-
-The Google Play build is made from upstream tag 1.5.0 plus the patch files in
-build-android/patches, which give exactly the tree of this branch outside
-build-android/ and this NOTICE. Everything else is unchanged upstream code.
+   and its description and the app_name string say Emilli; the input
+   permission notice names that service.
+10. flutter/lib (common, desktop and mobile pages), src/lang/en.rs and ko.rs,
+   src/flutter_ffi.rs: the codec choice titled "Codec" with one plain line
+   under each choice, reachable from the main settings page on phones and
+   first in Settings > Display on computers; the codec in use shown on the
+   computer's session toolbar; plain words when a Windows confirmation window
+   is open on a PC that runs the app without installing it, with one Install
+   button on that PC.
+11. flutter/pubspec.yaml: version 1.5.3, versionCode 73 (the patches above
+   left upstream's version line).
+12. .github/workflows/build-android-emilli.yml and build-android/ci/: the
+   build on GitHub (unsigned; the Play upload is signed on the build PC).
 
 "RustDesk" is the name of the upstream project. This build is not made,
 endorsed or supported by the RustDesk developers. For the official RustDesk

@@ -1,0 +1,92 @@
+# Builds the Android app "Emilli 원격" (net.emillis.remote) from this branch on a GitHub runner:
+# the bridge, the native libraries for arm64-v8a and armeabi-v7a, the app bundle (AAB) and a
+# universal APK made from it, in the same toolchain image as the Play recipe
+# (build-android/Dockerfile; versions as upstream's CI at 1.5.3), with the checks of the recipe's
+# verify-aab step (build-android/ci/build-ci.sh).
+#
+# Both files are UNSIGNED: no signing key of ours is on GitHub and none is made here. The lead
+# signs them on the build PC with the existing key (see .github/README.md). Nothing is released
+# or uploaded anywhere but this run's artifact.
+name: Build Android app (Emilli)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [android-153]
+    paths-ignore:
+      - "NOTICE"
+      - ".github/README.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-android-emilli-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TOOLCHAIN_IMAGE: emilli/rustdesk-android-toolchain:1.5.3
+  RETENTION_DAYS: 30
+
+jobs:
+  android:
+    name: Android app (arm64-v8a, armeabi-v7a), unsigned
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - name: Checkout this branch
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Make room on the runner
+        run: |
+          df -h /
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL /usr/local/share/boost /usr/share/swift
+          docker image prune -a -f > /dev/null
+          df -h /
+
+      - name: Restore the vcpkg package cache
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/cache/vcpkg-archives
+          key: android-vcpkg-arm-${{ hashFiles('vcpkg.json', 'res/vcpkg/**') }}-${{ github.run_id }}
+          restore-keys: android-vcpkg-arm-${{ hashFiles('vcpkg.json', 'res/vcpkg/**') }}-
+
+      - name: Build the toolchain image (the Play recipe's Dockerfile)
+        run: docker build -t "$TOOLCHAIN_IMAGE" build-android
+
+      - name: Build and check
+        run: |
+          mkdir -p "$RUNNER_TEMP/cache" "$RUNNER_TEMP/out"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/work/rustdesk" \
+            -v "$GITHUB_WORKSPACE/build-android:/recipe:ro" \
+            -v "$RUNNER_TEMP/cache:/work/cache" \
+            -v "$RUNNER_TEMP/out:/work/out" \
+            -e CARGO_BUILD_JOBS=4 -e VCPKG_MAX_CONCURRENCY=4 \
+            "$TOOLCHAIN_IMAGE" bash /recipe/ci/build-ci.sh all
+          ls -la "$RUNNER_TEMP/out"
+          df -h /
+
+      - name: Keep the vcpkg packages for the next build
+        if: always()
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ${{ runner.temp }}/cache/vcpkg-archives
+          key: android-vcpkg-arm-${{ hashFiles('vcpkg.json', 'res/vcpkg/**') }}-${{ github.run_id }}
+
+      - name: Name of the artifact
+        id: name
+        run: |
+          v=$(sed -n 's/^version: \([0-9.]*\)+\([0-9]*\)$/\1-vc\2/p' flutter/pubspec.yaml)
+          echo "name=emilli-remote-android-$v-unsigned" >> "$GITHUB_OUTPUT"
+
+      - name: Keep the unsigned bundle, the universal APK and the checks
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.name.outputs.name }}
+          path: ${{ runner.temp }}/out
+          retention-days: ${{ env.RETENTION_DAYS }}
+          compression-level: 0
+          if-no-files-found: error

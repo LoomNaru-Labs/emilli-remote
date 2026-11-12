@@ -1,24 +1,33 @@
-# Emilli Remote for Android: Google Play source (branch `android-play`)
+# Emilli Remote for Android (branch `android-153`)
 
 This branch holds the exact source of the Android app "Emilli 원격"
-(`net.emillis.remote`) that LoomNaru Labs Inc publishes on Google Play:
-RustDesk 1.5.0 with a few changes so the app uses our server `rd.emillis.net`
-out of the box. The list of changes is in [NOTICE](../NOTICE); each change is one
-commit, so `git log` shows them in order.
+(`net.emillis.remote`) that LoomNaru Labs Inc builds: RustDesk 1.5.3 with a few
+changes so the app uses our server `rd.emillis.net` out of the box, plus a
+findable codec choice. The list of changes is in [NOTICE](../NOTICE); each
+change is one commit, so `git log` shows them in order.
 
-## How the Play build is made
+## How it is built
 
-[`build-android/`](../build-android) is the recipe, run in Docker on Linux:
+[`build-android-emilli.yml`](workflows/build-android-emilli.yml) builds it on a
+GitHub runner in the toolchain image of [`build-android/`](../build-android)
+(`Dockerfile`, same versions as upstream's CI at 1.5.3: Rust 1.75, NDK r28c,
+Flutter 3.24.5, vcpkg pinned) with `build-android/ci/build-ci.sh`: bridge,
+native libraries for arm64-v8a and armeabi-v7a, the app bundle and a universal
+APK made from it, and the checks. Both files are **unsigned**: no signing key is
+on GitHub. To sign them on the build PC with the existing key (alias
+`emilli-rustdesk`):
 
-- `Dockerfile`: the toolchain image, with the same versions as upstream's CI at
-  tag 1.5.0 (Rust 1.75, NDK r28c, Flutter 3.24.5, vcpkg pinned).
-- `build.sh step play`: clones upstream tag 1.5.0, applies `patches/01` to `07`,
-  copies `icons/res`, generates the Flutter-Rust bridge, builds the native library
-  for arm64-v8a and armeabi-v7a, builds the app bundle and checks it.
-- The container mounts this recipe at `/recipe` (read only), the signing key folder
-  at `/keystore` (read only, never in this repository) and a work volume at `/work`.
+```sh
+# Google Play upload (the key is the upload key)
+jarsigner -keystore emilli-rustdesk-release.p12 -storetype PKCS12 \
+  -digestalg SHA-256 -sigalg SHA256withRSA app-unsigned.aab emilli-rustdesk
+# APK for direct installs
+zipalign -p -f 4 app-universal-unsigned.apk app-aligned.apk
+apksigner sign --ks emilli-rustdesk-release.p12 --ks-key-alias emilli-rustdesk \
+  --out app-universal.apk app-aligned.apk
+```
 
-Nothing in this branch runs on GitHub: it has no workflows.
+Nothing is released from this branch.
 
 ## Licence
 

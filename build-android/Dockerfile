@@ -1,5 +1,5 @@
 # Toolchain image for building the RustDesk Android client locally.
-# Every version below is copied from upstream CI at tag 1.5.0:
+# Every version below is copied from upstream CI at tag 1.5.0 (unchanged at 1.5.3):
 #   .github/workflows/bridge.yml        (bridge codegen: Rust 1.75, flutter_rust_bridge 1.80.1, Flutter 3.22.3)
 #   .github/workflows/flutter-build.yml (job build-rustdesk-android: NDK r28c, cargo-ndk 3.1.2,
 #                                        Flutter 3.24.5, vcpkg 9e593bb18ea69cc5095e012465dcd675a822ed0d)
