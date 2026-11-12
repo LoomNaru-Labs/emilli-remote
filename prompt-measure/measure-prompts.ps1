@@ -273,7 +273,9 @@ function Accept-OnStore {
     $w = CM-Window
     if (-not $w) { return 'no connection window yet' }
     $c = [SL]::Clip($w.Hwnd)
-    $g = @([SL]::Clusters($c[0], $c[1] + [int]($c[3] * 0.55), $c[2], [int]($c[3] * 0.45), 'blue', 10) | Where-Object { ($_[2] - $_[0]) -ge 40 })
+    # Only the bottom row (Accept and Cancel): attempt 5 (run 43151715909) took the blue
+    # permission icons above it for the button.
+    $g = @([SL]::Clusters($c[0], $c[1] + [int]($c[3] * 0.84), $c[2], [int]($c[3] * 0.16), 'blue', 10) | Where-Object { ($_[2] - $_[0]) -ge 40 -and ($_[3] - $_[1]) -le 60 })
     if ($g.Count -eq 0) { return 'no blue button in the connection window' }
     $b = $g | Sort-Object { $_[4] } -Descending | Select-Object -First 1
     [SL]::Glide([int](($b[0] + $b[2]) / 2), [int](($b[1] + $b[3]) / 2), 300); Start-Sleep -Milliseconds 150; [SL]::Click($false)
