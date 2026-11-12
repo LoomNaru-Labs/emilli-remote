@@ -303,7 +303,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_codec_hint_h265", "Graphics chip like H264, with less data"),
         ("emilli_codec_badge_tip", "Codec in use. Click to change it."),
         ("emilli_uac_title", "Windows confirmation window"),
-        ("emilli_uac_not_installed_tip", "A Windows confirmation window is open on the other PC, so its screen looks frozen here. System windows can be clicked only when Emilli Remote is installed on that PC. Press \"Install\" in the Emilli Remote window at the bottom right of that PC, and someone there presses \"Yes\" once in the Windows window."),
+        ("emilli_uac_not_installed_tip", "A Windows confirmation window is open on the other PC, so its screen looks frozen here. System windows can be clicked only when Emilli Remote is installed on that PC. Someone at that PC opens the Emilli Remote window (from the taskbar if it is hidden), presses \"Install\", and presses \"Yes\" once in the Windows window."),
         ("emilli_install_for_system_prompts", "System windows can be clicked only when Emilli Remote is installed on this PC."),
         ("emilli_install_button", "Install"),
     ].iter().cloned().collect();

@@ -838,7 +838,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_codec_hint_h265", "H264처럼 그래픽 칩을 쓰고 데이터가 더 적습니다"),
         ("emilli_codec_badge_tip", "지금 쓰는 코덱입니다. 누르면 바꿀 수 있습니다."),
         ("emilli_uac_title", "Windows 확인 창"),
-        ("emilli_uac_not_installed_tip", "상대 PC에 Windows 확인 창이 떠 있어서 화면이 멈춘 것처럼 보입니다. 상대 PC에 Emilli Remote를 설치해야 시스템 창을 누를 수 있습니다. 상대 PC 오른쪽 아래 Emilli Remote 창에서 \"설치\"를 누르고, 매장에서 Windows 확인 창의 \"예\"를 한 번 눌러 주세요."),
+        ("emilli_uac_not_installed_tip", "상대 PC에 Windows 확인 창이 떠 있어서 화면이 멈춘 것처럼 보입니다. 상대 PC에 Emilli Remote를 설치해야 시스템 창을 누를 수 있습니다. 그 PC 앞에 있는 분이 Emilli Remote 창(작업 표시줄에 있으면 눌러서 열기)에서 \"설치\"를 누르고, Windows 확인 창의 \"예\"를 한 번 눌러 주세요."),
         ("emilli_install_for_system_prompts", "이 PC에 설치해야 시스템 창을 누를 수 있습니다"),
         ("emilli_install_button", "설치"),
     ].iter().cloned().collect();
