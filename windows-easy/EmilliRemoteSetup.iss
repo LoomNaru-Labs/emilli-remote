@@ -23,7 +23,7 @@
 
 #define AppVersion "1.5.3"
 #define RustDeskExe "rustdesk-1.5.3-x86_64.exe"
-#define RustDeskSha256 "396a7f9fd91f4800a5cd491eeec3ef30bae08f58a75786eff2e685c80bd0dfab"
+#define RustDeskSha256 "f6e06e83bef42e43cfe68ef07273f41337257022c0199b985cc919fdd170fd6c"
 ; The values the download page publishes: ID server, empty relay (RustDesk then uses the
 ; ID server's host), API server for login, and the server's public key.
 #define ServerConfig "host=rd.emillis.net,key=EbM3IT7TgSkeeyQpDqmXbo1wvrVz8GG4inwI332DS0A=,api=https://rd.emillis.net,"
