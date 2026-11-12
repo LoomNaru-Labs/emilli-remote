@@ -842,6 +842,10 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       state: widget.state,
       setFullscreen: _setFullscreen,
     ));
+    // Emilli: the codec in use, visible without opening a menu.
+    if (widget.ffi.connType == ConnType.defaultConn) {
+      toolbarItems.add(_CodecBadge(id: widget.id, ffi: widget.ffi));
+    }
     // Do not show keyboard for camera connection type.
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_KeyboardMenu(id: widget.id, ffi: widget.ffi));
@@ -1707,6 +1711,57 @@ class ScreenAdjustor {
       return false;
     }
     return await _getAdjustedWindowFrame(mediaSize, forMenu: true) != null;
+  }
+}
+
+// Emilli: shows the codec the session uses (for example "AV1") on the toolbar; a click opens
+// the same codec list as Display > Codec, with one plain line under each choice.
+class _CodecBadge extends StatelessWidget {
+  final String id;
+  final FFI ffi;
+  const _CodecBadge({Key? key, required this.id, required this.ffi})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return _IconSubmenuButton(
+      tooltip: 'emilli_codec_badge_tip',
+      icon: Center(
+        child: ListenableBuilder(
+          listenable: ffi.qualityMonitorModel,
+          builder: (context, _) => Text(
+            ffi.qualityMonitorModel.data.codecFormat ?? '...',
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+      color: _ToolbarTheme.blueColor,
+      hoverColor: _ToolbarTheme.hoverBlueColor,
+      ffi: ffi,
+      width: 48,
+      menuChildrenGetter: (_) => [
+        futureBuilder(
+            future: toolbarCodec(context, id, ffi),
+            hasData: (data) {
+              final v = data as List<TRadioMenu<String>>;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: v
+                    .map((e) => RdoMenuButton(
+                        value: e.value,
+                        groupValue: e.groupValue,
+                        onChanged: e.onChanged,
+                        child: e.child,
+                        ffi: ffi))
+                    .toList(),
+              );
+            }),
+      ],
+    );
   }
 }
 

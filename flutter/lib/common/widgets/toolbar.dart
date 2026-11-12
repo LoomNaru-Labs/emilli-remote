@@ -873,6 +873,37 @@ Future<List<TRadioMenu<String>>> toolbarImageQuality(
   ], ownedActionIds: _kToolbarImageQualityActionIds);
 }
 
+// Emilli: one plain line under each codec choice, so the choice can be made without testing.
+String? emilliCodecHint(String value) {
+  switch (value) {
+    case 'auto':
+    case 'vp8':
+    case 'vp9':
+    case 'av1':
+    case 'h264':
+    case 'h265':
+      return translate('emilli_codec_hint_$value');
+    default:
+      return null;
+  }
+}
+
+Widget emilliCodecLabel(String label, String value, {TextStyle? style}) {
+  final hint = emilliCodecHint(value);
+  if (hint == null) return Text(label, style: style);
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Text(label, style: style),
+      Text(hint,
+          style: TextStyle(
+              fontSize: 12,
+              color: (style?.color ?? Colors.grey).withOpacity(0.75))),
+    ],
+  );
+}
+
 Future<List<TRadioMenu<String>>> toolbarCodec(
     BuildContext context, String id, FFI ffi) async {
   final sessionId = ffi.sessionId;
@@ -911,7 +942,7 @@ Future<List<TRadioMenu<String>>> toolbarCodec(
   TRadioMenu<String> radio(
       String label, String value, bool enabled, String actionId) {
     return TRadioMenu<String>(
-        child: Text(label),
+        child: emilliCodecLabel(label, value),
         value: value,
         groupValue: groupValue,
         onChanged: enabled ? onChanged : null,

@@ -1016,6 +1016,33 @@ class _CmControlPanel extends StatelessWidget {
               text: "Switch Sides",
               textColor: Colors.white),
         ),
+        // Emilli: on a PC that runs the app without installing it, say why the other side
+        // cannot click system windows here and offer the install (Windows asks once for
+        // "Yes" on this PC).
+        Offstage(
+          offstage: !showElevation,
+          child: Column(
+            children: [
+              Text(
+                translate('emilli_install_for_system_prompts'),
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 12),
+              ).marginOnly(bottom: 4),
+              buildButton(
+                context,
+                color: MyTheme.accent,
+                onClick: () => bind.cmOpenInstall(),
+                icon: Icon(
+                  Icons.download_rounded,
+                  color: Colors.white,
+                  size: 14,
+                ),
+                text: 'emilli_install_button',
+                textColor: Colors.white,
+              ),
+            ],
+          ),
+        ),
         Offstage(
           offstage: !showElevation,
           child: buildButton(
