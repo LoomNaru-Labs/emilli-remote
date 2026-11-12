@@ -27,7 +27,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: measure-153-${{ github.ref }}
+  group: measure-153-${{ github.sha }}
   cancel-in-progress: false
 
 env:

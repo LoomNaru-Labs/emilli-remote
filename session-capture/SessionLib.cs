@@ -572,6 +572,31 @@ public static class SL {
         }
     }
 
+    // REMOTE-153: typing with real keys (virtual key and scan code, Shift when needed), as a
+    // keyboard does; a remote session forwards these, not Unicode packets.
+    [DllImport("user32.dll")] static extern short VkKeyScan(char ch);
+    [DllImport("user32.dll")] static extern uint MapVirtualKey(uint code, uint type);
+    static INPUT Key(ushort vk, bool up) {
+        INPUT k = new INPUT(); k.type = 1; k.u.ki.vk = vk; k.u.ki.scan = (ushort)MapVirtualKey(vk, 0);
+        k.u.ki.flags = up ? 0x0002u : 0u; return k;
+    }
+    public static int TypeKeys(string text, int msPerChar) {
+        int n = 0;
+        foreach (char ch in text) {
+            short r = VkKeyScan(ch);
+            if (r == -1) continue;
+            ushort vk = (ushort)(r & 0xFF); bool shift = (r & 0x100) != 0;
+            List<INPUT> seq = new List<INPUT>();
+            if (shift) seq.Add(Key(0x10, false));
+            seq.Add(Key(vk, false)); seq.Add(Key(vk, true));
+            if (shift) seq.Add(Key(0x10, true));
+            SendInput((uint)seq.Count, seq.ToArray(), Marshal.SizeOf(typeof(INPUT)));
+            n++;
+            Thread.Sleep(msPerChar);
+        }
+        return n;
+    }
+
     public static void PressKey(ushort vk) {
         INPUT[] i = new INPUT[2];
         i[0].type = 1; i[0].u.ki.vk = vk;

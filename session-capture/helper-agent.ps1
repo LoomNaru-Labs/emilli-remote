@@ -419,8 +419,8 @@ function Run($c) {
         'type-file' {
             if (-not [SL]::IsForeground($state.Remote)) { [SL]::FrontNoAlt($state.Remote); Start-Sleep -Milliseconds 300 }
             $t = (Get-Content -Path (Join-Path $Dir "secret\$($c.file)") -TotalCount 1).Trim()
-            [SL]::TypeText($t, [int]$c.ms)
-            $n = $t.Length; $t = $null
+            $n = [SL]::TypeKeys($t, [int]$c.ms)
+            $t = $null
             Start-Sleep -Milliseconds 250
             [SL]::PressKey(0x0D)
             return "typed $n characters from $($c.file) and Enter"

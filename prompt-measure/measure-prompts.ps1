@@ -156,12 +156,26 @@ function Run-AsUser([string] $Name, [string] $Command) {
     Start-ScheduledTask -TaskName $Name
 }
 
-# The elevation prompt: a limited process asks to run cmd.exe as administrator; if the prompt
-# is answered "Yes", the elevated cmd writes its groups (with "High Mandatory Level") to a file.
+# The runner's own user gets no prompt (attempt 1, run 43146939371: its "limited" processes ran
+# with High Mandatory Level, so Windows elevated without asking). A second administrator, "Clerk",
+# is an ordinary one: its programs run with limited rights and Windows asks before elevating, as
+# for the person signed in at a store PC. Clerk's program runs in this (the console) session.
+$me = Get-LocalUser -Name $env:USERNAME -ErrorAction SilentlyContinue
+Note "runner user ${env:USERNAME}: SID ends with $(if ($me) { ($me.SID.Value -split '-')[-1] } else { '?' }) (500 = the built-in Administrator, which Windows never asks)"
+$clerkPw = 'Ck9' + (New-Secret 17)
+New-LocalUser -Name 'Clerk' -Password (ConvertTo-SecureString $clerkPw -AsPlainText -Force) -PasswordNeverExpires -AccountNeverExpires -Description 'Throwaway administrator for the prompt measurement' | Out-Null
+Add-LocalGroupMember -Group 'Administrators' -Member 'Clerk'
+$ClerkCred = New-Object System.Management.Automation.PSCredential ("$env:COMPUTERNAME\Clerk", (ConvertTo-SecureString $clerkPw -AsPlainText -Force))
+$clerkPw = $null
+
+# The elevation prompt: Clerk's program (limited rights) asks to run cmd.exe as administrator; if
+# the prompt is answered "Yes", the elevated command writes its groups (with "High Mandatory
+# Level") to a file.
 function Raise-Prompt([string] $Tag) {
     $mark = "$Dir\out\elevated-$Tag.txt"
     Remove-Item -Force $mark -ErrorAction SilentlyContinue
-    Run-AsUser "EmilliPrompt$Tag" "whoami /groups | Out-File -Encoding ascii $Dir\out\limited-$Tag.txt; Start-Process -FilePath cmd.exe -ArgumentList '/c whoami /groups > $mark' -Verb RunAs"
+    $cmd = "whoami /groups | Out-File -Encoding ascii $Dir\out\limited-$Tag.txt; Start-Process -FilePath cmd.exe -ArgumentList '/c whoami /groups > $mark' -Verb RunAs"
+    Start-Process -FilePath powershell.exe -Credential $ClerkCred -LoadUserProfile -WorkingDirectory $Dir -WindowStyle Hidden -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', $cmd)
     $up = Wait-Until { Get-Process -Name consent -ErrorAction SilentlyContinue } 25 300
     $lim = Get-Content "$Dir\out\limited-$Tag.txt" -ErrorAction SilentlyContinue | Select-String 'Mandatory Level'
     Note "the asking process: $(($lim | ForEach-Object { $_.Line.Trim() -replace '\s+', ' ' }) -join '; ')"
@@ -367,7 +381,9 @@ $HelperExe = "$Dir\bin\helper-rustdesk.exe"
 Copy-Item -Force $Packer $HelperExe
 icacls $HelperExe /grant "${HelperUser}:RX" /Q | Out-Null
 
-Step 'Store PC: plain desktop, no icons'
+Step 'Store PC: plain desktop, no icons, its windows minimized'
+(New-Object -ComObject Shell.Application).MinimizeAll()
+Start-Sleep -Seconds 1
 [SL]::PlainDesktop($Wall[0], $Wall[1], $Wall[2])
 Note "desktop icon lists hidden: $([SL]::HideDesktopIcons())"
 [SL]::Glide($s[2] - 12, 12, 300)
@@ -490,9 +506,11 @@ try {
         Ask @{ op = 'click-xy'; x = $cx; y = $cy; ms = 400 } 20 | Out-Null
         Start-Sleep -Seconds 3
         Helper-Shot 'lock-password-field'
-        Ask @{ op = 'type-file'; file = 'winpw.txt'; ms = 60 } 30 | Out-Null
+        Ask @{ op = 'type-file'; file = 'winpw.txt'; ms = 80 } 30 | Out-Null
+        Start-Sleep -Milliseconds 1500
+        Helper-Shot 'lock-just-after-password'
     }
-    $back = Wait-Until { [Desk]::InputDesktop() -eq 'Default' -and -not (Get-Process -Name LogonUI -ErrorAction SilentlyContinue) } 40 1000
+    $back = Wait-Until { [Desk]::InputDesktop() -eq 'Default' -and -not (Get-Process -Name LogonUI -ErrorAction SilentlyContinue) } 25 500
     Start-Sleep -Seconds 3
     Helper-Shot 'lock-after-sign-in'
     Console-Shot 'after-sign-in'
