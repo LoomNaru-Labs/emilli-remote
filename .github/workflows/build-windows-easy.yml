@@ -30,10 +30,10 @@ concurrency:
 
 env:
   VERSION: "1.5.3"
-  # Branch windows-153, workflow build-windows-emilli.yml, run 43140284800 (commit 5da2a9f).
-  RUSTDESK_RUN_ID: "43140284800"
+  # Branch windows-153-ui, workflow build-windows-emilli.yml, run 43141580092 (commit 9d026df).
+  RUSTDESK_RUN_ID: "43141580092"
   RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.3-windows-x86_64-unsigned
-  RUSTDESK_SHA256: 005298fc6fb409e6303b46fb2aa08535709c5ab782c5376facbc81a2a31b6742
+  RUSTDESK_SHA256: 396a7f9fd91f4800a5cd491eeec3ef30bae08f58a75786eff2e685c80bd0dfab
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"
