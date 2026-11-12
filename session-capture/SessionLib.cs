@@ -598,9 +598,8 @@ public static class SL {
     }
 
     public static void PressKey(ushort vk) {
-        INPUT[] i = new INPUT[2];
-        i[0].type = 1; i[0].u.ki.vk = vk;
-        i[1].type = 1; i[1].u.ki.vk = vk; i[1].u.ki.flags = 0x0002;
+        // With the scan code too (REMOTE-153): a remote session forwards the key by it.
+        INPUT[] i = new INPUT[] { Key(vk, false), Key(vk, true) };
         SendInput(2, i, Marshal.SizeOf(typeof(INPUT)));
     }
 

@@ -421,6 +421,7 @@ function Run($c) {
             $t = (Get-Content -Path (Join-Path $Dir "secret\$($c.file)") -TotalCount 1).Trim()
             $n = [SL]::TypeKeys($t, [int]$c.ms)
             $t = $null
+            if ($c.enter -eq $false) { return "typed $n characters from $($c.file)" }
             Start-Sleep -Milliseconds 250
             [SL]::PressKey(0x0D)
             return "typed $n characters from $($c.file) and Enter"

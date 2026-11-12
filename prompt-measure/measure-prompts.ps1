@@ -163,10 +163,13 @@ function Run-AsUser([string] $Name, [string] $Command) {
 $me = Get-LocalUser -Name $env:USERNAME -ErrorAction SilentlyContinue
 Note "runner user ${env:USERNAME}: SID ends with $(if ($me) { ($me.SID.Value -split '-')[-1] } else { '?' }) (500 = the built-in Administrator, which Windows never asks)"
 $clerkPw = 'Ck9' + (New-Secret 17)
-New-LocalUser -Name 'Clerk' -Password (ConvertTo-SecureString $clerkPw -AsPlainText -Force) -PasswordNeverExpires -AccountNeverExpires -Description 'Throwaway administrator for the prompt measurement' | Out-Null
+New-LocalUser -Name 'Clerk' -Password (ConvertTo-SecureString $clerkPw -AsPlainText -Force) -PasswordNeverExpires -AccountNeverExpires -Description 'Throwaway admin for the prompt measurement' | Out-Null
 Add-LocalGroupMember -Group 'Administrators' -Member 'Clerk'
 $ClerkCred = New-Object System.Management.Automation.PSCredential ("$env:COMPUTERNAME\Clerk", (ConvertTo-SecureString $clerkPw -AsPlainText -Force))
 $clerkPw = $null
+# Clerk's first sign-in builds its profile (slow); done now so the prompt later comes quickly.
+$first = Start-Process -FilePath cmd.exe -Credential $ClerkCred -LoadUserProfile -WorkingDirectory $Dir -WindowStyle Hidden -ArgumentList @('/c', 'exit') -PassThru
+Note "Clerk's profile ready: $($first.WaitForExit(180000))"
 
 # The elevation prompt: Clerk's program (limited rights) asks to run cmd.exe as administrator; if
 # the prompt is answered "Yes", the elevated command writes its groups (with "High Mandatory
@@ -412,7 +415,7 @@ try {
     $ran = Wait-Until { (Test-Path $mark) -and (Select-String -Path $mark -Pattern 'High Mandatory Level' -Quiet) } 20 500
     Start-Sleep -Seconds 1
     Helper-Shot 'installed-after-click'
-    Result 'installed click reaches the prompt' ([bool]$ran) "$how; the elevated command ran (its groups show High Mandatory Level): $([bool]$ran); consent.exe still running: $([bool](Get-Process -Name consent -ErrorAction SilentlyContinue))"
+    Result 'installed click reaches the prompt' ($up -and [bool]$ran) "$how; the elevated command ran (its groups show High Mandatory Level): $([bool]$ran); consent.exe still running: $([bool](Get-Process -Name consent -ErrorAction SilentlyContinue))"
 } catch { Note "case 1 failed: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"; [void]$Summary.Add("CASE 1 FAILED: $($_.Exception.Message)") }
 Close-Prompt
 try { Ask @{ op = 'close-remote' } 30 | Out-Null } catch { }
@@ -506,7 +509,10 @@ try {
         Ask @{ op = 'click-xy'; x = $cx; y = $cy; ms = 400 } 20 | Out-Null
         Start-Sleep -Seconds 3
         Helper-Shot 'lock-password-field'
-        Ask @{ op = 'type-file'; file = 'winpw.txt'; ms = 80 } 30 | Out-Null
+        Ask @{ op = 'type-file'; file = 'winpw.txt'; ms = 80; enter = $false } 30 | Out-Null
+        Start-Sleep -Milliseconds 700
+        Helper-Shot 'lock-password-typed'
+        Ask @{ op = 'key'; vk = 13 } 20 | Out-Null
         Start-Sleep -Milliseconds 1500
         Helper-Shot 'lock-just-after-password'
     }
