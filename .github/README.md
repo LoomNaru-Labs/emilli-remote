@@ -27,6 +27,8 @@ history):
   Emilli Remote icon, no update check, "Emilli Remote" as the shown name) that saves
   `rd.emillis.net` as the server (and a password on a store PC), tested on GitHub's
   Windows runners.
+- On the `easy-windows-153` branch, the same Setup carries our build of RustDesk 1.5.3
+  (branch `windows-153`).
 
 The apps are not signed yet, so they are not ready to hand out. Signing and
 TestFlight are described in [docs/APPLE_SIGNING_NEXT.md](../docs/APPLE_SIGNING_NEXT.md).

@@ -66,6 +66,15 @@ Added on 2026-11-06 for Windows (branch easy-windows):
     rd.emillis.net as its server, plus a password for a store PC. Until
     2026-11-06 it carried the official, unmodified RustDesk 1.5.0 installer.
 
+Added on 2026-11-12 for Windows (branch easy-windows-153):
+
+14. windows-easy/ and .github/workflows/build-windows-easy.yml on
+    easy-windows-153: the same Setup carrying RustDesk 1.5.3 for Windows as
+    built from the branch windows-153 of this repository (its NOTICE lists
+    the changes: those of item 13 plus a findable codec choice and plain
+    words when a Windows confirmation window is open on a PC that runs the
+    program without installing it).
+
 Everything else is unchanged upstream code. The complete history of the
 changes is the git history of this repository.
 

@@ -1,8 +1,8 @@
 # Builds and tests "Emilli Remote Setup" (windows-easy/), the next-next Windows installer that
-# carries our build of RustDesk 1.5.0 (branch windows-emilli: Emilli Remote icon, no update
+# carries our build of RustDesk 1.5.3 (branch windows-153: Emilli Remote icon, no update
 # check, "Emilli Remote" as the shown name) and points it at rd.emillis.net.
 #
-# build: take the installer that the windows-emilli run RUSTDESK_RUN_ID built and check its
+# build: take the installer that the windows-153 run RUSTDESK_RUN_ID built and check its
 #        SHA-256 (it is unsigned, like the setup until signing exists), install a
 #        pinned Inno Setup, compile the setup, sign it (only once the Artifact Signing
 #        secrets exist; until then it stays unsigned) and keep it as an artifact.
@@ -15,7 +15,7 @@ name: Build Windows setup
 on:
   workflow_dispatch:
   push:
-    branches: [easy-windows]
+    branches: [easy-windows-153]
     paths:
       - "windows-easy/**"
       - ".github/workflows/build-windows-easy.yml"
@@ -26,14 +26,14 @@ permissions:
 
 concurrency:
   group: build-windows-easy-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
-  VERSION: "1.5.0"
-  # Branch windows-emilli, workflow build-windows-emilli.yml, run 42229915426 (commit e42dc54).
-  RUSTDESK_RUN_ID: "42229915426"
-  RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.0-windows-x86_64-unsigned
-  RUSTDESK_SHA256: 8d4acf4daeb25b5d81c2ecb058f068778bf7705edc61b47042952523abf52640
+  VERSION: "1.5.3"
+  # Branch windows-153, workflow build-windows-emilli.yml, run 43140284800 (commit 5da2a9f).
+  RUSTDESK_RUN_ID: "43140284800"
+  RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.3-windows-x86_64-unsigned
+  RUSTDESK_SHA256: 005298fc6fb409e6303b46fb2aa08535709c5ab782c5376facbc81a2a31b6742
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"
@@ -54,7 +54,7 @@ jobs:
           sparse-checkout: windows-easy
           persist-credentials: false
 
-      - name: Download our RustDesk build (branch windows-emilli)
+      - name: Download our RustDesk build (branch windows-153)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: ${{ env.RUSTDESK_ARTIFACT }}

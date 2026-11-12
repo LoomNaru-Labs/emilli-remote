@@ -1,35 +1,35 @@
 ; Emilli Remote Setup
 ;
 ; A next-next Windows installer for PCs that use our RustDesk server, rd.emillis.net.
-; It carries RustDesk 1.5.0 for Windows as built by LoomNaru Labs from the branch windows-emilli
+; It carries RustDesk 1.5.3 for Windows as built by LoomNaru Labs from the branch windows-153
 ; of https://github.com/LoomNaru-Labs/emilli-remote (upstream code with the Emilli Remote icon,
 ; no update check and "Emilli Remote" as the shown name; SHA-256 checked when this file is
 ; compiled and again on the PC before it runs) and drives RustDesk's own command line:
-;   rustdesk-1.5.0-x86_64.exe --silent-install       installs RustDesk and its service
+;   rustdesk-1.5.3-x86_64.exe --silent-install       installs RustDesk and its service
 ;   rustdesk.exe --config "host=...,key=...,api=..."  saves our server in the service
 ;   rustdesk.exe --option <name> <value>             store PC: password only, no click-accept
 ;   rustdesk.exe --password "<password>"             store PC: the permanent password
 ;   rustdesk.exe --get-id                            the ID shown on the last page
-; (src/core_main.rs at RustDesk tag 1.5.0; --config, --option and --password need an
+; (src/core_main.rs at RustDesk tags 1.5.0 and 1.5.3; --config, --option and --password need an
 ; installed RustDesk and administrator rights, so this Setup always runs as administrator.)
 ;
 ; Silent use, for IT and for the CI test:
-;   Emilli-Remote-Setup-1.5.0.exe /VERYSILENT /SUPPRESSMSGBOXES /MODE=store /PWFILE=<file> [/IDFILE=<file>] [/LOG=<file>]
-;   Emilli-Remote-Setup-1.5.0.exe /VERYSILENT /SUPPRESSMSGBOXES /MODE=control [/IDFILE=<file>] [/LOG=<file>]
+;   Emilli-Remote-Setup-1.5.3.exe /VERYSILENT /SUPPRESSMSGBOXES /MODE=store /PWFILE=<file> [/IDFILE=<file>] [/LOG=<file>]
+;   Emilli-Remote-Setup-1.5.3.exe /VERYSILENT /SUPPRESSMSGBOXES /MODE=control [/IDFILE=<file>] [/LOG=<file>]
 ; The password file holds the store PC password on its first line. Setup never writes the
 ; password to its log. Exit code 0 means every step worked, 10 means a step failed.
 ;
-; Compile: ISCC.exe /DRustDeskDir=<folder holding rustdesk-1.5.0-x86_64.exe> EmilliRemoteSetup.iss
+; Compile: ISCC.exe /DRustDeskDir=<folder holding rustdesk-1.5.3-x86_64.exe> EmilliRemoteSetup.iss
 
-#define AppVersion "1.5.0"
-#define RustDeskExe "rustdesk-1.5.0-x86_64.exe"
-#define RustDeskSha256 "8d4acf4daeb25b5d81c2ecb058f068778bf7705edc61b47042952523abf52640"
+#define AppVersion "1.5.3"
+#define RustDeskExe "rustdesk-1.5.3-x86_64.exe"
+#define RustDeskSha256 "005298fc6fb409e6303b46fb2aa08535709c5ab782c5376facbc81a2a31b6742"
 ; The values the download page publishes: ID server, empty relay (RustDesk then uses the
 ; ID server's host), API server for login, and the server's public key.
 #define ServerConfig "host=rd.emillis.net,key=EbM3IT7TgSkeeyQpDqmXbo1wvrVz8GG4inwI332DS0A=,api=https://rd.emillis.net,"
 
 #ifndef RustDeskDir
-  #error Pass /DRustDeskDir=<folder that holds rustdesk-1.5.0-x86_64.exe from branch windows-emilli>
+  #error Pass /DRustDeskDir=<folder that holds rustdesk-1.5.3-x86_64.exe from branch windows-153>
 #endif
 #if LowerCase(GetSHA256OfFile(AddBackslash(RustDeskDir) + RustDeskExe)) != RustDeskSha256
   #error The RustDesk installer does not match the pinned SHA-256
@@ -250,7 +250,7 @@ var
   Src, Answer: String;
   ResultCode: Integer;
 begin
-  { 1. The RustDesk installer (our windows-emilli build), checked again before it runs. }
+  { 1. The RustDesk installer (our windows-153 build), checked again before it runs. }
   SetStatus('RustDesk 설치 중  /  Installing RustDesk', 1);
   ExtractTemporaryFile(RustDeskExe);
   Src := ExpandConstant('{tmp}\') + RustDeskExe;
