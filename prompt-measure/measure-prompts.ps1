@@ -112,7 +112,9 @@ function Ask([hashtable] $C, [int] $Timeout = 60) {
     $end = (Get-Date).AddSeconds($Timeout)
     while ((Get-Date) -lt $end) {
         if (Test-Path $donePath) {
-            $a = Get-Content -Raw -Path $donePath | ConvertFrom-Json
+            # The helper may still be writing the answer (attempt 6, run 43152335707: "being used
+            # by another process"); read it again a moment later.
+            try { $a = Get-Content -Raw -Path $donePath -ErrorAction Stop | ConvertFrom-Json } catch { Start-Sleep -Milliseconds 100; continue }
             Note "helper $($C.op): $($a.result)"
             if (-not $a.ok) { throw "helper $($C.op) failed: $($a.result)" }
             return $a.result
@@ -472,7 +474,13 @@ try {
     Start-Sleep -Seconds 3
     Helper-Shot 'portable-after-prompt'
     Console-Shot 'portable-connection-window'
-    if ($cm) { try { Note "connection window picture: $([SL]::ShotWindow($cm.Hwnd, (Join-Path $Shots 'store-portable-cm-window.png')))" } catch { } }
+    # The connection window minimizes itself once the connection is accepted; opened again
+    # (as the person at the PC would from the taskbar) for its install notice.
+    if ($cm) {
+        try { [SL]::Show($cm.Hwnd, 9); Start-Sleep -Milliseconds 1200 } catch { }
+        try { Note "connection window picture: $([SL]::ShotWindow($cm.Hwnd, (Join-Path $Shots 'store-portable-cm-window.png')))" } catch { }
+        Console-Shot 'portable-cm-window-open'
+    }
 } catch { Note "case 2 failed: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"; [void]$Summary.Add("CASE 2 FAILED: $($_.Exception.Message)") }
 Close-Prompt
 try { Ask @{ op = 'close-remote' } 30 | Out-Null } catch { }
