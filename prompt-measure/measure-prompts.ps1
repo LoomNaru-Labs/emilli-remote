@@ -224,6 +224,8 @@ function Install-Store([string] $Tag) {
     $proc = Start-Process -FilePath $Setup -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/MODE=store', "/PWFILE=$pwFile", "/LOG=$setupLog")
     if (-not $proc.WaitForExit(600000)) { throw 'Setup did not finish in 10 minutes' }
     Note "Setup exit code $($proc.ExitCode)"
+    $tries = @(Select-String -Path $setupLog -Pattern 'setting the password, try|copy of the settings|password set' -ErrorAction SilentlyContinue | ForEach-Object { ($_.Line -replace '^.*Emilli: ', '').Trim() })
+    [void]$Summary.Add("SETUP $Tag exit $($proc.ExitCode); password: $($tries -join ' / ')")
     if ($proc.ExitCode -ne 0) { throw 'Setup failed' }
     cmd /c "`"$Exe`" --option direct-server Y > nul 2>&1"
     reg add 'HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall\RustDesk' /f /v share_rdp /t REG_SZ /d false | Out-Null
@@ -485,6 +487,22 @@ try {
 Close-Prompt
 try { Ask @{ op = 'close-remote' } 30 | Out-Null } catch { }
 Start-Sleep -Seconds 2
+Get-Process -Name rustdesk -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq [SL]::MySession() } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 2
+
+# Attempt 3's order once more before the reinstall: the runner's own user runs the program
+# without installing (that user is never asked, so it runs with full rights), then Setup again.
+# Run 43150734804 stopped at Setup step 4 after this; Setup 6f62df2 tries the password again.
+Step 'The runner user runs the program without installing (as before the failed reinstall in run 43150734804)'
+try {
+    $own = "$Dirin\Emilli-Remote-own.exe"
+    Copy-Item -Force $Packer $own
+    Start-Process -FilePath $own | Out-Null
+    $l = Wait-Until { Get-NetTCPConnection -LocalPort 21118 -State Listen -ErrorAction SilentlyContinue } 60 1000
+    Note "the runner user's program listening on 21118: $([bool]$l)"
+    RustDesk-Processes | ForEach-Object { Note $_ }
+    Start-Sleep -Seconds 10
+} catch { Note "the runner user's program: $($_.Exception.Message)" }
 Get-Process -Name rustdesk -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq [SL]::MySession() } | Stop-Process -Force -ErrorAction SilentlyContinue
 Start-Sleep -Seconds 2
 
