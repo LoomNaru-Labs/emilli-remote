@@ -1,8 +1,8 @@
-Emilli Remote for Windows, branch windows-emilli
-================================================
+Emilli Remote for Windows, branch windows-153
+=============================================
 
 This branch is the complete corresponding source of the Windows program that
-Emilli Remote Setup (branch easy-windows) installs: RustDesk 1.5.0 for
+Emilli Remote Setup (branch easy-windows) installs: RustDesk 1.5.3 for
 Windows x64, built by LoomNaru Labs Inc with the workflow
 .github/workflows/build-windows-emilli.yml. It is a modified version of
 RustDesk, the open source remote desktop software by Purslane Tech Pte. Ltd.
@@ -11,10 +11,11 @@ RustDesk is licensed under the GNU Affero General Public License, version 3
 (AGPL-3.0); see the file LICENCE. This modified version is distributed under
 the same licence, without any warranty.
 
-Base: RustDesk tag 1.5.0, commit fada664df7a294d1d1a9ca3e7cd3637069122f17,
-with libs/hbb_common at commit 229b904508364c8997aad0fb5af57effac859f60
-included as plain files (the first commit, shared with main and
-android-play), then upstream's workflows removed (shared with android-play).
+Base: RustDesk tag 1.5.3, commit 95cca3f661f635b3cc85c04935fe8d96d8f432ef,
+with libs/hbb_common at commit fae47e024dd83cef6aaecde0aa7d11731df11649
+included as plain files (the import commit, whose parent is the 1.5.0
+import shared with main and android-play), then upstream's workflows
+removed. The same changes on 1.5.0 are on branch windows-emilli.
 
 Changes, each in its own commit:
 
@@ -30,7 +31,7 @@ Changes, each in its own commit:
    "RustDesk": install folder, settings folders, service, pipes, registry key,
    shortcut file names and server settings are unchanged.
 4. .github/workflows/build-windows-emilli.yml, NOTICE, .github/README.md: the
-   build, following upstream's own Windows job at tag 1.5.0.
+   build, following upstream's own Windows job at tag 1.5.3.
 
 "RustDesk" is the name of the upstream project. This build is not made,
 endorsed or supported by the RustDesk developers. For the official RustDesk
