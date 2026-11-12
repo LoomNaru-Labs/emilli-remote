@@ -248,7 +248,7 @@ end;
 procedure DoInstall;
 var
   Src, Answer: String;
-  ResultCode: Integer;
+  ResultCode, PwTries: Integer;
 begin
   { 1. The RustDesk installer (our windows-153 build), checked again before it runs. }
   SetStatus('RustDesk 설치 중  /  Installing RustDesk', 1);
@@ -322,7 +322,27 @@ begin
       ewWaitUntilTerminated, ResultCode);
     Exec(InstalledExe, '--option approve-mode password', '', SW_HIDE, ewWaitUntilTerminated,
       ResultCode);
-    RunRustDesk('--password "' + StorePassword + '"', Answer);
+    { RustDesk 1.5.1+ sets the password in the service and then copies the service's settings
+      into this user's settings (src/ipc.rs, sync_security_config_from_server). In REMOTE-153
+      run 43150734804, a reinstall after the app had run without installing, only that copy
+      failed. Try three times; when only the copy failed, the service has the password, which
+      is the one connections are checked against. }
+    PwTries := 0;
+    repeat
+      PwTries := PwTries + 1;
+      RunRustDesk('--password "' + StorePassword + '"', Answer);
+      if Answer <> 'Done!' then
+      begin
+        Log('Emilli: setting the password, try ' + IntToStr(PwTries) + ': RustDesk said "' + Answer + '"');
+        if PwTries < 3 then
+          Sleep(2000);
+      end;
+    until (Answer = 'Done!') or (PwTries >= 3);
+    if (Answer <> 'Done!') and (Pos('Host security update succeeded', Answer) = 1) then
+    begin
+      Log('Emilli: the service has the store PC password; only this user''s copy of the settings was not refreshed');
+      Answer := 'Done!';
+    end;
     if Answer <> 'Done!' then
     begin
       Fail('The store PC password was not set (RustDesk said "' + Answer + '").');
