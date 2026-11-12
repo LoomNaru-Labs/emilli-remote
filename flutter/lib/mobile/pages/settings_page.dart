@@ -14,6 +14,8 @@ import 'package:url_launcher/url_launcher_string.dart';
 import '../../common.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
+import '../../common/widgets/toolbar.dart'
+    show emilliCodecHint, emilliCodecLabel;
 import '../../consts.dart';
 import '../../models/model.dart';
 import '../../models/platform_model.dart';
@@ -1132,7 +1134,9 @@ class _SettingsState extends State<SettingsPage> with WidgetsBindingObserver {
               Navigator.push(context, MaterialPageRoute(builder: (context) {
                 return _DisplayPage();
               }));
-            })
+            }),
+        // Emilli: the default codec, one tap from the main settings page.
+        _emilliCodecTile(),
       ],
     );
   }
@@ -1255,17 +1259,6 @@ class _DisplayPage extends StatefulWidget {
 class __DisplayPageState extends State<_DisplayPage> {
   @override
   Widget build(BuildContext context) {
-    final Map codecsJson = jsonDecode(bind.mainSupportedHwdecodings());
-    final h264 = codecsJson['h264'] ?? false;
-    final h265 = codecsJson['h265'] ?? false;
-    var codecList = [
-      _RadioEntry('Auto', 'auto'),
-      _RadioEntry('VP8', 'vp8'),
-      _RadioEntry('VP9', 'vp9'),
-      _RadioEntry('AV1', 'av1'),
-      if (h264) _RadioEntry('H264', 'h264'),
-      if (h265) _RadioEntry('H265', 'h265')
-    ];
     RxBool showCustomImageQuality = false.obs;
     return Scaffold(
       appBar: AppBar(
@@ -1319,18 +1312,7 @@ class __DisplayPageState extends State<_DisplayPage> {
               showTail: showCustomImageQuality,
               notCloseValue: kRemoteImageQualityCustom,
             ),
-            _getPopupDialogRadioEntry(
-              title: 'Default Codec',
-              list: codecList,
-              getter: () =>
-                  bind.mainGetUserDefaultOption(key: kOptionCodecPreference),
-              asyncSetter: isOptionFixed(kOptionCodecPreference)
-                  ? null
-                  : (value) async {
-                      await bind.mainSetUserDefaultOption(
-                          key: kOptionCodecPreference, value: value);
-                    },
-            ),
+            _emilliCodecTile(),
           ],
         ),
         SettingsSection(
@@ -1409,7 +1391,45 @@ class __ManageTrustedDevicesState extends State<_ManageTrustedDevices> {
 class _RadioEntry {
   final String label;
   final String value;
-  _RadioEntry(this.label, this.value);
+  // Emilli: an optional plain line shown under the label in the choice dialog.
+  final String? hint;
+  _RadioEntry(this.label, this.value, {this.hint});
+}
+
+// Emilli: the codec choices with one plain line each, for the main settings page and the
+// display settings page.
+List<_RadioEntry> _emilliCodecEntries() {
+  bool h264 = false, h265 = false;
+  try {
+    final Map codecsJson = jsonDecode(bind.mainSupportedHwdecodings());
+    h264 = codecsJson['h264'] ?? false;
+    h265 = codecsJson['h265'] ?? false;
+  } catch (e) {
+    debugPrint("failed to parse supported hwdecodings, err=$e");
+  }
+  return [
+    _RadioEntry('Auto', 'auto', hint: emilliCodecHint('auto')),
+    _RadioEntry('VP8', 'vp8', hint: emilliCodecHint('vp8')),
+    _RadioEntry('VP9', 'vp9', hint: emilliCodecHint('vp9')),
+    _RadioEntry('AV1', 'av1', hint: emilliCodecHint('av1')),
+    if (h264) _RadioEntry('H264', 'h264', hint: emilliCodecHint('h264')),
+    if (h265) _RadioEntry('H265', 'h265', hint: emilliCodecHint('h265')),
+  ];
+}
+
+SettingsTile _emilliCodecTile() {
+  return _getPopupDialogRadioEntry(
+    title: 'emilli_codec_title',
+    list: _emilliCodecEntries(),
+    getter: () => bind.mainGetUserDefaultOption(key: kOptionCodecPreference),
+    asyncSetter: isOptionFixed(kOptionCodecPreference)
+        ? null
+        : (value) async {
+            await bind.mainSetUserDefaultOption(
+                key: kOptionCodecPreference, value: value);
+          },
+    dialogTitle: true,
+  );
 }
 
 typedef _RadioEntryGetter = String Function();
@@ -1423,6 +1443,7 @@ SettingsTile _getPopupDialogRadioEntry({
   Widget? tail,
   RxBool? showTail,
   String? notCloseValue,
+  bool dialogTitle = false,
 }) {
   RxString groupValue = ''.obs;
   RxString valueText = ''.obs;
@@ -1451,11 +1472,17 @@ SettingsTile _getPopupDialogRadioEntry({
             };
 
       return CustomAlertDialog(
+          title: dialogTitle ? Text(translate(title)) : null,
           content: Obx(
         () => Column(children: [
           ...list
-              .map((e) => getRadio(Text(translate(e.label)), e.value,
-                  groupValue.value, onChanged))
+              .map((e) => getRadio(
+                  e.hint == null
+                      ? Text(translate(e.label))
+                      : emilliCodecLabel(translate(e.label), e.value),
+                  e.value,
+                  groupValue.value,
+                  onChanged))
               .toList(),
           Offstage(
             offstage:

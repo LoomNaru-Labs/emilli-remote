@@ -2316,6 +2316,18 @@ pub fn cm_elevate_portable(conn_id: i32) {
     crate::ui_cm_interface::elevate_portable(conn_id);
 }
 
+// Emilli: from the connection window of a program that runs without being installed, open its
+// install page (the same page as the main window's install button); Windows then asks once for
+// "Yes" on this PC. Nothing happens on an installed program or on other systems.
+pub fn cm_open_install() {
+    #[cfg(windows)]
+    if !crate::platform::is_installed() {
+        if let Err(err) = crate::run_me(vec!["--install"]) {
+            log::error!("failed to open the install page: {}", err);
+        }
+    }
+}
+
 pub fn cm_switch_back(conn_id: i32) {
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     crate::ui_cm_interface::switch_back(conn_id);

@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
 import 'package:flutter_hbb/common/widgets/setting_widgets.dart';
+import 'package:flutter_hbb/common/widgets/toolbar.dart'
+    show emilliCodecHint;
 import 'package:flutter_hbb/consts.dart';
 import 'package:flutter_hbb/desktop/pages/desktop_home_page.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/page_body.dart';
@@ -2009,10 +2011,11 @@ class _DisplayState extends State<_Display> {
   Widget build(BuildContext context) {
     final scrollController = ScrollController();
     return ListView(controller: scrollController, children: [
+      // Emilli: the codec choice first, under the plain title "Codec".
+      codec(context),
       viewStyle(context),
       scrollStyle(context),
       imageQuality(context),
-      codec(context),
       if (isDesktop) trackpadSpeed(context),
       if (!isWeb) privacyModeImpl(context),
       other(context),
@@ -2163,6 +2166,7 @@ class _DisplayState extends State<_Display> {
       if (h264) {
         hwRadios.add(_Radio(context,
             value: 'h264',
+            hint: emilliCodecHint('h264'),
             groupValue: groupValue,
             label: 'H264',
             onChanged: isOptFixed ? null : onChanged));
@@ -2170,6 +2174,7 @@ class _DisplayState extends State<_Display> {
       if (h265) {
         hwRadios.add(_Radio(context,
             value: 'h265',
+            hint: emilliCodecHint('h265'),
             groupValue: groupValue,
             label: 'H265',
             onChanged: isOptFixed ? null : onChanged));
@@ -2177,24 +2182,28 @@ class _DisplayState extends State<_Display> {
     } catch (e) {
       debugPrint("failed to parse supported hwdecodings, err=$e");
     }
-    return _Card(title: 'Default Codec', children: [
+    return _Card(title: 'emilli_codec_title', children: [
       _Radio(context,
           value: 'auto',
+          hint: emilliCodecHint('auto'),
           groupValue: groupValue,
           label: 'Auto',
           onChanged: isOptFixed ? null : onChanged),
       _Radio(context,
           value: 'vp8',
+          hint: emilliCodecHint('vp8'),
           groupValue: groupValue,
           label: 'VP8',
           onChanged: isOptFixed ? null : onChanged),
       _Radio(context,
           value: 'vp9',
+          hint: emilliCodecHint('vp9'),
           groupValue: groupValue,
           label: 'VP9',
           onChanged: isOptFixed ? null : onChanged),
       _Radio(context,
           value: 'av1',
+          hint: emilliCodecHint('av1'),
           groupValue: groupValue,
           label: 'AV1',
           onChanged: isOptFixed ? null : onChanged),
@@ -2799,7 +2808,8 @@ Widget _Radio<T>(BuildContext context,
     required T groupValue,
     required String label,
     required Function(T value)? onChanged,
-    bool autoNewLine = true}) {
+    bool autoNewLine = true,
+    String? hint}) {
   final onChange2 = onChanged != null
       ? (T? value) {
           if (value != null) {
@@ -2812,12 +2822,27 @@ Widget _Radio<T>(BuildContext context,
       children: [
         Radio<T>(value: value, groupValue: groupValue, onChanged: onChange2),
         Expanded(
-          child: Text(translate(label),
-                  overflow: autoNewLine ? null : TextOverflow.ellipsis,
-                  style: TextStyle(
-                      fontSize: _kContentFontSize,
-                      color: disabledTextColor(context, onChange2 != null)))
-              .marginOnly(left: 5),
+          child: hint == null
+              ? Text(translate(label),
+                      overflow: autoNewLine ? null : TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: _kContentFontSize,
+                          color: disabledTextColor(context, onChange2 != null)))
+                  .marginOnly(left: 5)
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(translate(label),
+                        style: TextStyle(
+                            fontSize: _kContentFontSize,
+                            color:
+                                disabledTextColor(context, onChange2 != null))),
+                    Text(hint,
+                        style: TextStyle(
+                            fontSize: _kContentFontSize - 2,
+                            color: Theme.of(context).hintColor)),
+                  ],
+                ).marginOnly(left: 5, top: 2, bottom: 2),
         ),
       ],
     ).marginOnly(left: _kRadioLeftMargin),
