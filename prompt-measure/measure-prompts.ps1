@@ -147,15 +147,6 @@ Set-ItemProperty $pol -Name PromptOnSecureDesktop -Value 1 -Type DWord
 Note "now ConsentPromptBehaviorAdmin 2 (consent on the secure desktop), PromptOnSecureDesktop 1"
 if (-not $UacOn) { Note 'UAC is off on this runner (EnableLUA 0, needs a restart to change): no elevation prompt can appear' }
 
-# A task in the console session with the user's limited rights, as a person double-clicking
-# something does. $Command runs in powershell.exe.
-function Run-AsUser([string] $Name, [string] $Command) {
-    $act = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command `"$Command`""
-    $pr = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive -RunLevel Limited
-    Register-ScheduledTask -TaskName $Name -Action $act -Principal $pr -Force | Out-Null
-    Start-ScheduledTask -TaskName $Name
-}
-
 # The runner's own user gets no prompt (attempt 1, run 43146939371: its "limited" processes ran
 # with High Mandatory Level, so Windows elevated without asking). A second administrator, "Clerk",
 # is an ordinary one: its programs run with limited rights and Windows asks before elevating, as
@@ -204,15 +195,17 @@ function Click-Yes {
     if ($boxes.Count -eq 0) { return "no light dialog in the picture ($g)" }
     $d = $boxes | Sort-Object { $_.r - $_.l } -Descending | Select-Object -First 1
     Note "dialog in the helper's view: $($d.l),$($d.t) to $($d.r),$($d.b)"
-    # The Yes button: Windows' accent blue in the lower part of the dialog.
+    # Windows 11 marks "No" with the accent blue (the safe default); "Yes" is the light button of
+    # the same size to its left (attempt 3, run 43150734804: a click on the accent button
+    # cancelled the prompt).
     $lowY = [int]($d.t + ($d.b - $d.t) * 0.55)
     $a = Ask @{ op = 'clusters'; kind = 'accent'; min = 8; x = $d.l; y = $lowY; w = ($d.r - $d.l + 1); h = ($d.b - $lowY + 1) } 20
     $acc = @($a -split ' / ' | Where-Object { $_ } | ForEach-Object { $v = $_ -split ','; [pscustomobject]@{ l = [int]$v[0]; t = [int]$v[1]; r = [int]$v[2]; b = [int]$v[3]; n = [int]$v[4] } } | Where-Object { ($_.r - $_.l) -ge 40 })
     if ($acc.Count -gt 0) {
-        $y = $acc | Sort-Object n -Descending | Select-Object -First 1
-        $cx = [int](($y.l + $y.r) / 2); $cy = [int](($y.t + $y.b) / 2)
+        $no = $acc | Sort-Object n -Descending | Select-Object -First 1
+        $cx = [int]($no.l - 14 - ($no.r - $no.l) / 2); $cy = [int](($no.t + $no.b) / 2)
         Ask @{ op = 'click-xy'; x = $cx; y = $cy; ms = 500 } 20 | Out-Null
-        return "clicked the accent button $($y.l),$($y.t) to $($y.r),$($y.b) at $cx,$cy"
+        return "accent button (No) $($no.l),$($no.t) to $($no.r),$($no.b); clicked Yes to its left at $cx,$cy"
     }
     # No accent colour: Yes is the left one of the two buttons along the dialog's bottom.
     $cx = [int]($d.l + ($d.r - $d.l) * 0.28); $cy = [int]($d.b - 32)
@@ -264,7 +257,9 @@ function Connect-Helper([string] $Tag, [bool] $WithPassword, [string] $HelperExe
         # Accept at most twice: once accepted, the window's blue buttons are others (Install).
         if (-not $WithPassword -and ($i -eq 3 -or $i -eq 30)) { Accept-OnStore | Out-Null }
         $r = Ask @{ op = 'locate'; r = $Wall[0]; g = $Wall[1]; b = $Wall[2]; tol = 26; rw = $s[2]; rh = $s[3] } 20
-        if ($r -match 'picture at (\d+),(\d+) scale ([0-9.]+)') { $loc = @([int]$Matches[1], [int]$Matches[2], [double]$Matches[3]) }
+        # Only the whole picture counts (attempt 3 took an 840-pixel patch at scale 0.35 for it).
+        $px = if ($r -match '\((\d+) px\)') { [int]$Matches[1] } else { 0 }
+        if ($r -match 'picture at (\d+),(\d+) scale ([0-9.]+)' -and [double]$Matches[3] -ge 0.9 -and $px -ge 200000) { $loc = @([int]$Matches[1], [int]$Matches[2], [double]$Matches[3]) }
         else { Start-Sleep -Milliseconds 700 }
     }
     if (-not $loc) { Helper-Shot "$Tag-not-located"; throw "the store PC picture was not found in the session window ($Tag)" }
@@ -426,9 +421,15 @@ Step 'Case 2: the program only run (not installed), the same prompt'
 try {
     Uninstall-All
     # What a person gets by double-clicking the downloaded program: the same file the Setup
-    # carries, run with the user's limited rights; direct access on for the loopback test
-    # (the user's own settings file, as Settings > Security writes it).
-    $ucfg = Join-Path $env:APPDATA 'RustDesk\config'
+    # carries, run by Clerk, an ordinary administrator whose programs have limited rights until
+    # Windows asks (attempt 3 ran it as the runner's built-in Administrator, which is never
+    # asked, and the store PC password from case 1 was still in that user's settings). Direct
+    # access on for the loopback test, in Clerk's own settings file (as Settings > Security
+    # writes it); the rest at the app's defaults (the store PC accepts with a click).
+    $clerkSid = (Get-LocalUser -Name 'Clerk').SID.Value
+    $clerkHome = (Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq $clerkSid }).LocalPath
+    Note "Clerk's profile: $clerkHome"
+    $ucfg = Join-Path $clerkHome 'AppData\Roaming\RustDesk\config'
     New-Item -ItemType Directory -Force -Path $ucfg | Out-Null
     $f2 = Join-Path $ucfg 'RustDesk2.toml'
     $t2 = if (Test-Path $f2) { [System.IO.File]::ReadAllText($f2) } else { '' }
@@ -438,7 +439,7 @@ try {
     [System.IO.File]::WriteAllText($f2, $t2, (New-Object System.Text.UTF8Encoding($false)))
     $portable = "$Dir\bin\Emilli-Remote-portable.exe"
     Copy-Item -Force $Packer $portable
-    Run-AsUser 'EmilliPortable' "Start-Process -FilePath '$portable'"
+    Start-Process -FilePath $portable -Credential $ClerkCred -LoadUserProfile -WorkingDirectory $Dir | Out-Null
     $listen = Wait-Until { Get-NetTCPConnection -LocalPort 21118 -State Listen -ErrorAction SilentlyContinue } 90 1000
     RustDesk-Processes | ForEach-Object { Note $_ }
     Note "not installed: service present $([bool](Get-Service -Name RustDesk -ErrorAction SilentlyContinue)); listening on 21118: $([bool]$listen)"
@@ -521,6 +522,15 @@ try {
     Helper-Shot 'lock-after-sign-in'
     Console-Shot 'after-sign-in'
     Result 'signed in through the session' ([bool]$back) "input desktop '$([Desk]::InputDesktop())'; LogonUI running: $([bool](Get-Process -Name LogonUI -ErrorAction SilentlyContinue))"
+    # The session toolbar opened (its arrow at the top middle of the session window), for a
+    # picture of the codec badge next to the Display menu (windows-153-ui 9d026df).
+    $pic = Ask @{ op = 'picture' } 20
+    if ($pic -match 'picture (-?\d+),(-?\d+) (\d+)x(\d+)') {
+        $ax = [int]$Matches[1] + [int]([int]$Matches[3] / 2) + 19; $ay = [int]$Matches[2] + 8
+        Ask @{ op = 'click-xy'; x = $ax; y = $ay; ms = 400 } 20 | Out-Null
+        Start-Sleep -Milliseconds 1500
+        Helper-Shot 'toolbar-codec-badge'
+    }
 } catch { Note "case 3 failed: $($_.Exception.Message) (line $($_.InvocationInfo.ScriptLineNumber))"; [void]$Summary.Add("CASE 3 FAILED: $($_.Exception.Message)") }
 try { Ask @{ op = 'close-remote' } 30 | Out-Null } catch { }
 
