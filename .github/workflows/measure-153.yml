@@ -1,0 +1,168 @@
+# Measurements for brief REMOTE-153 on the 1.5.3 build, each on its own fresh windows-latest
+# runner (nothing is built or released here):
+#   blur:    how long the session picture stays soft after a scroll, with the app's defaults and
+#            on a store PC that fails the AV1 speed test (blur-measure/measure-blur.ps1 -Matrix 153)
+#   prompts: whether the other side sees and can click Windows' elevation prompt and the lock
+#            screen, installed with Emilli Remote Setup and not installed
+#            (prompt-measure/measure-prompts.ps1)
+# rd.emillis.net and RustDesk's public servers are blocked in the hosts file. The measurement
+# steps write their results to files and never turn the run red; the results are in the
+# artifacts (kept 3 days) and in the step logs ("RESULT" lines). Which setup and program are
+# measured, and which of the two jobs measure, is in measure-153.env (run ids and SHA-256).
+name: Measure 1.5.3
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [remote-153-measure]
+    paths:
+      - "measure-153.env"
+      - "prompt-measure/**"
+      - "blur-measure/**"
+      - "session-capture/**"
+      - ".github/workflows/measure-153.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: measure-153-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  VERSION: "1.5.3"
+  RETENTION_DAYS: 3
+
+jobs:
+  blur:
+    name: Blur after a scroll (1.5.3 build)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout the measurement scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: |
+            blur-measure
+            session-capture
+            windows-capture
+            measure-153.env
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Read measure-153.env (which setup, which program, what to measure)
+        shell: powershell
+        run: |
+          Get-Content measure-153.env | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { Write-Host $_; $_ >> $env:GITHUB_ENV }
+
+      - name: Download the setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: setup
+          run-id: ${{ env.SETUP_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Check the setup and keep the runner away from real servers
+        shell: powershell
+        run: |
+          $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+          Write-Host "Setup SHA-256 $hash"
+          if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          foreach ($h in @('rd.emillis.net', 'rs-ny.rustdesk.com', 'rs-sg.rustdesk.com', 'rs-cn.rustdesk.com', 'api.rustdesk.com', 'admin.rustdesk.com')) {
+            Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 $h"
+          }
+          ipconfig /flushdns | Out-Null
+
+      - name: Display 1920x1080 at 100%
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
+
+      - name: Measure
+        if: env.WHAT == 'blur' || env.WHAT == 'both'
+        continue-on-error: true
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File blur-measure\measure-blur.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Matrix 153 -Out "$env:RUNNER_TEMP\blur"
+
+      - name: Keep the numbers and the pictures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: measure-153-blur
+          path: ${{ runner.temp }}/blur
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn
+
+  prompts:
+    name: System prompts and the lock screen
+    runs-on: windows-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout the measurement scripts
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: |
+            prompt-measure
+            session-capture
+            windows-capture
+            measure-153.env
+          sparse-checkout-cone-mode: false
+          persist-credentials: false
+
+      - name: Read measure-153.env (which setup, which program, what to measure)
+        shell: powershell
+        run: |
+          Get-Content measure-153.env | Where-Object { $_ -match '^[A-Z0-9_]+=' } | ForEach-Object { Write-Host $_; $_ >> $env:GITHUB_ENV }
+
+      - name: Download the setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.VERSION }}-windows
+          path: setup
+          run-id: ${{ env.SETUP_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Download the program the setup carries (run without installing in case 2)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-rustdesk-${{ env.VERSION }}-windows-x86_64-unsigned
+          path: program
+          run-id: ${{ env.RUSTDESK_RUN_ID }}
+          github-token: ${{ github.token }}
+
+      - name: Check both files and keep the runner away from real servers
+        shell: powershell
+        run: |
+          $setup = "setup\Emilli-Remote-Setup-$env:VERSION.exe"
+          $hash = (Get-FileHash -Algorithm SHA256 $setup).Hash.ToLower()
+          Write-Host "Setup SHA-256 $hash"
+          if ($hash -ne $env:SETUP_SHA256) { throw "This is not the tested setup" }
+          $prog = "program\rustdesk-$env:VERSION-x86_64.exe"
+          $ph = (Get-FileHash -Algorithm SHA256 $prog).Hash.ToLower()
+          Write-Host "program SHA-256 $ph"
+          if ($ph -ne $env:RUSTDESK_SHA256) { throw "This is not the program the setup carries" }
+          foreach ($h in @('rd.emillis.net', 'rs-ny.rustdesk.com', 'rs-sg.rustdesk.com', 'rs-cn.rustdesk.com', 'api.rustdesk.com', 'admin.rustdesk.com')) {
+            Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 $h"
+          }
+          ipconfig /flushdns | Out-Null
+
+      - name: Display 1920x1080 at 100%
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
+
+      - name: Measure
+        if: env.WHAT == 'prompts' || env.WHAT == 'both'
+        continue-on-error: true
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File prompt-measure\measure-prompts.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Packer "$env:GITHUB_WORKSPACE\program\rustdesk-$env:VERSION-x86_64.exe" -Out "$env:RUNNER_TEMP\prompts"
+
+      - name: Keep the results and the pictures
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: measure-153-prompts
+          path: ${{ runner.temp }}/prompts
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn

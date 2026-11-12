@@ -367,6 +367,64 @@ function Run($c) {
             [SL]::Glide($sx, $sy, [int]$c.ms); Start-Sleep -Milliseconds 150; [SL]::Click($false)
             return "send clicked at $sx,$sy"
         }
+        # ---- REMOTE-153 (system prompts) ----
+        # A connection without a password, for a PC whose app is not installed: that PC's
+        # connection window then asks there to accept it.
+        'connect-nopw' {
+            $before = @(RustDeskWindows | ForEach-Object { $_.Hwnd })
+            Start-Process -FilePath $c.exe -ArgumentList @('--connect', $c.peer)
+            for ($i = 0; $i -lt [int]$c.seconds; $i++) {
+                Start-Sleep -Seconds 1
+                $remote = RustDeskWindows | Where-Object { $before -notcontains $_.Hwnd -and $_.Title -like "*$($c.peer)*" } | Select-Object -First 1
+                if ($remote -and $i -ge 2) { $state.Remote = $remote.Hwnd; return "remote window $remote" }
+            }
+            throw "no session window after $($c.seconds) s"
+        }
+        # Keep the remote picture as it is now, for 'changed'.
+        'keep' {
+            $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
+            [SL]::Keep([int]$state.CropLeft, [int]$state.CropTop, $w, $h)
+            return "kept $($state.CropLeft),$($state.CropTop) ${w}x$h"
+        }
+        # How much of the remote picture differs from the kept one (per mille), and where.
+        'changed' {
+            $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
+            $b = [SL]::ChangedBox([int]$c.tol)
+            $pm = [int][Math]::Round(1000.0 * $b[4] / ($w * $h))
+            return "changed $pm/1000 box $($b[0]),$($b[1]) to $($b[2]),$($b[3])"
+        }
+        # Column groups of a colour kind inside the remote picture (helper screen pixels).
+        'clusters' {
+            $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
+            $x = if ($c.x) { [int]$c.x } else { [int]$state.CropLeft }
+            $y = if ($c.y) { [int]$c.y } else { [int]$state.CropTop }
+            if ($c.w) { $w = [int]$c.w; $h = [int]$c.h }
+            $g = @([SL]::Clusters($x, $y, $w, $h, [string]$c.kind, [int]$c.min))
+            return (($g | ForEach-Object { $_ -join ',' }) -join ' / ')
+        }
+        'picture' {
+            $w = [int][Math]::Round($state.W * $state.Scale); $h = [int][Math]::Round($state.H * $state.Scale)
+            return "picture $($state.CropLeft),$($state.CropTop) ${w}x$h scale $($state.Scale)"
+        }
+        # Click at a helper screen point (inside the session window it goes to the remote PC).
+        'click-xy' {
+            if (-not [SL]::IsForeground($state.Remote)) { [SL]::FrontNoAlt($state.Remote); Start-Sleep -Milliseconds 300 }
+            [SL]::Glide([int]$c.x, [int]$c.y, [int]$c.ms)
+            Start-Sleep -Milliseconds 200
+            [SL]::Click($false)
+            return "clicked at $([int]$c.x),$([int]$c.y)"
+        }
+        'key' { [SL]::PressKey([uint16]$c.vk); return "key $($c.vk)" }
+        # Types the first line of a file in the secret folder, then Enter (a password).
+        'type-file' {
+            if (-not [SL]::IsForeground($state.Remote)) { [SL]::FrontNoAlt($state.Remote); Start-Sleep -Milliseconds 300 }
+            $t = (Get-Content -Path (Join-Path $Dir "secret\$($c.file)") -TotalCount 1).Trim()
+            [SL]::TypeText($t, [int]$c.ms)
+            $n = $t.Length; $t = $null
+            Start-Sleep -Milliseconds 250
+            [SL]::PressKey(0x0D)
+            return "typed $n characters from $($c.file) and Enter"
+        }
         'quit' { return 'bye' }
         default { throw "unknown op $($c.op)" }
     }

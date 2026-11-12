@@ -692,6 +692,9 @@ public static class SL {
         if (kind == "blue") return b >= 200 && r <= 110 && g >= 80 && g <= 200;
         if (kind == "red") return r >= 220 && g <= 130 && b <= 130;
         if (kind == "dark") return r <= 110 && g <= 110 && b <= 110;
+        // REMOTE-153: a light dialog on a dimmed screen, and Windows' accent blue (Yes button).
+        if (kind == "bright") return r >= 200 && g >= 200 && b >= 200;
+        if (kind == "accent") return b >= 150 && r <= 70 && g >= 70 && g <= 150;
         return false;
     }
 

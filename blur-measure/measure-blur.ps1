@@ -29,7 +29,10 @@ param(
     [string] $Only = $env:BLUR_ONLY,
     # Attempt 4: upstream's own installer (rustdesk-<version>-x86_64.exe) instead of our Setup,
     # to see whether upstream's later fix clears what attempt 3 found.
-    [string] $Official = ''
+    [string] $Official = '',
+    # REMOTE-153: the settings of the 1.5.3 build (the defaults, a store PC that fails the AV1
+    # speed test, the slow-line floor) instead of attempt 4's list.
+    [string] $Matrix = ''
 )
 $ErrorActionPreference = 'Stop'
 
@@ -66,6 +69,20 @@ $Settings = @(
     @{ name = 'balanced-auto'; q = 'balanced'; codec = 'auto' }
 )
 $Modes = @('scroll-ticker', 'scroll-still')
+# REMOTE-153 (1.5.3 build, both PCs on it). "default": no defaults file at all, so the helper
+# uses what the app ships with. "weak": the store PC's AV1 speed test failed (option av1-test N,
+# what the app saves on a PC too slow for AV1), so Auto picks VP9 there. A setting with "modes"
+# runs only those screens.
+if ($Matrix -eq '153') {
+    $Settings = @(
+        @{ name = 'default';          none = $true;                         av1test = 'Y' },
+        @{ name = 'weak-default';     none = $true;                         av1test = 'N' },
+        @{ name = 'weak-best';        q = 'best';     codec = 'auto';       av1test = 'N' },
+        @{ name = 'weak-custom17';    q = 'custom';   codec = 'auto'; custom = 17; av1test = 'N'; modes = @('scroll-still') },
+        @{ name = 'default-custom17'; q = 'custom';   codec = 'auto'; custom = 17; av1test = 'Y'; modes = @('scroll-still') },
+        @{ name = 'balanced-vp8';     q = 'balanced'; codec = 'vp8';        av1test = 'Y'; modes = @('scroll-still') }
+    )
+}
 
 $Results = New-Object System.Collections.ArrayList
 
@@ -378,6 +395,14 @@ Debug-Shot 'page-a'
 function Write-Prefs($Set) {
     New-Item -ItemType Directory -Force -Path $HelperCfg | Out-Null
     Remove-Item -Force -Recurse (Join-Path $HelperCfg 'peers') -ErrorAction SilentlyContinue
+    if ($Set.av1test) {
+        cmd /c "`"$Exe`" --option av1-test $($Set.av1test) > nul 2>&1"
+        Note "store PC option av1-test = '$(cmd /c "`"$Exe`" --option av1-test 2>nul")'"
+    }
+    if ($Set.none) {
+        Remove-Item -Force (Join-Path $HelperCfg 'RustDesk_default.toml') -ErrorAction SilentlyContinue
+        return
+    }
     $lines = @('[options]', "image_quality = '$($Set.q)'", "codec-preference = '$($Set.codec)'")
     if ($Set.custom) { $lines += "custom_image_quality = '$($Set.custom)'" }
     [System.IO.File]::WriteAllText((Join-Path $HelperCfg 'RustDesk_default.toml'), (($lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding($false)))
@@ -396,7 +421,8 @@ function Measure-One($Set, [string] $Mode) {
     $tag = "$($Set.name)-$Mode"
     Step "Session $tag"
     Write-Prefs $Set
-    Note "helper defaults: $([System.IO.File]::ReadAllText((Join-Path $HelperCfg 'RustDesk_default.toml')).Replace("`n", ' | '))"
+    $df = Join-Path $HelperCfg 'RustDesk_default.toml'
+    Note "helper defaults: $(if (Test-Path $df) { [System.IO.File]::ReadAllText($df).Replace("`n", ' | ') } else { 'none (the app as shipped)' })"
     if ($Set.mbit) {
         New-NetQosPolicy -Name 'BlurSession' -IPPortMatchCondition 21118 -ThrottleRateActionBitsPerSecond ([int64]$Set.mbit * 1000000) -PolicyStore ActiveStore | Out-Null
         Note "QoS policy on port 21118: $($Set.mbit) Mbit/s"
@@ -504,7 +530,8 @@ function Measure-One($Set, [string] $Mode) {
 
 $fails = 0
 foreach ($set in $Settings) {
-    foreach ($mode in $Modes) {
+    $setModes = if ($set.modes) { $set.modes } else { $Modes }
+    foreach ($mode in $setModes) {
         if ($set.mbit -and $mode -eq 'still') { continue }
         try { Measure-One $set $mode }
         catch {
