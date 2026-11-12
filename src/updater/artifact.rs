@@ -104,6 +104,24 @@ pub(super) fn verified_update_artifact_from_release_page_url(
     update_url: &str,
     query: &UpdateArtifactQuery<'_>,
 ) -> ResultType<VerifiedUpdateArtifact> {
+    // Emilli: the Mac app never downloads RustDesk's releases (updates come from the
+    // administrator), so the release download address is not even built in on macOS.
+    #[cfg(target_os = "macos")]
+    {
+        let _ = (update_url, query);
+        return Err(hbb_common::anyhow::anyhow!(
+            "updates come from the administrator"
+        ));
+    }
+    #[cfg(not(target_os = "macos"))]
+    verified_update_artifact_from_release_page_url_(update_url, query)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn verified_update_artifact_from_release_page_url_(
+    update_url: &str,
+    query: &UpdateArtifactQuery<'_>,
+) -> ResultType<VerifiedUpdateArtifact> {
     let release_id = release_id_from_update_url(update_url)?;
     let display_version = display_version_from_release_id(&release_id)?;
     let expected_artifact_url_prefix =
