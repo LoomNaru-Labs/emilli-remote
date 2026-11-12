@@ -104,7 +104,6 @@ step_verify() {
     check "versionCode $(version_code), versionName $(version_name)" "$(yes_if "grep -q 'android:versionCode=\"$(version_code)\"' $tmp/manifest.xml && grep -q 'android:versionName=\"$(version_name)\"' $tmp/manifest.xml")"
     check "targetSdkVersion 36" "$(yes_if "grep -q 'android:targetSdkVersion=\"36\"' $tmp/manifest.xml")"
     check "no storage permission" "$(yes_if "! grep -q -E 'READ_EXTERNAL_STORAGE|WRITE_EXTERNAL_STORAGE|MANAGE_EXTERNAL_STORAGE' $tmp/manifest.xml")"
-    check "Accessibility service named 'Emilli 원격 입력'" "$(yes_if "grep -q 'Emilli 원격 입력' $tmp/manifest.xml")"
     log "signature state (unsigned on purpose)"
     jarsigner -verify "$aab" | tail -n 1 || true
     check "bundle is unsigned" "$(yes_if "jarsigner -verify '$aab' | grep -q 'jar is unsigned'")"
@@ -115,6 +114,10 @@ step_verify() {
     grep -E "^package:|^application-label:|^native-code|^sdkVersion|^targetSdkVersion" "$tmp/badging.txt"
     check "label 'Emilli 원격'" "$(yes_if "grep -q \"application-label:'Emilli 원격'\" $tmp/badging.txt")"
     check "native code arm64-v8a and armeabi-v7a" "$(yes_if "grep -q \"native-code: 'arm64-v8a' 'armeabi-v7a'\" $tmp/badging.txt")"
+    # The service label read by aapt2 (bundletool's manifest dump does not print Korean as text).
+    "$ANDROID_HOME/build-tools/$bt/aapt2" dump xmltree --file AndroidManifest.xml "$apk" > "$tmp/xmltree.txt"
+    grep -n "Emilli" "$tmp/xmltree.txt" | head -n 5
+    check "Accessibility service named 'Emilli 원격 입력'" "$(yes_if "grep -q 'Emilli 원격 입력' $tmp/xmltree.txt")"
     log "launcher icon background colour and icon files"
     bundletool dump resources --bundle "$aab" --values > "$tmp/res.txt"
     grep -A 2 "ic_launcher_background" "$tmp/res.txt" | head -n 3
