@@ -495,7 +495,7 @@ Start-Sleep -Seconds 2
 # Run 43150734804 stopped at Setup step 4 after this; Setup 6f62df2 tries the password again.
 Step 'The runner user runs the program without installing (as before the failed reinstall in run 43150734804)'
 try {
-    $own = "$Dirin\Emilli-Remote-own.exe"
+    $own = "$Dir\bin\Emilli-Remote-own.exe"
     Copy-Item -Force $Packer $own
     Start-Process -FilePath $own | Out-Null
     $l = Wait-Until { Get-NetTCPConnection -LocalPort 21118 -State Listen -ErrorAction SilentlyContinue } 60 1000
