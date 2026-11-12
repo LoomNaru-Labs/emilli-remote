@@ -1396,6 +1396,15 @@ void showOptions(
                   }
                 : null)),
       const Divider(color: MyTheme.border),
+      // Emilli: a title for the codec choices (one plain line under each comes from
+      // toolbarCodec), so they can be told apart from the image quality choices above.
+      if (codecRadios.isNotEmpty)
+        Align(
+          alignment: Alignment.centerLeft,
+          child: Text(translate('emilli_codec_title'),
+                  style: const TextStyle(fontWeight: FontWeight.bold))
+              .marginOnly(top: 4, bottom: 2),
+        ),
       for (var e in codecRadios)
         Obx(() => getRadio<String>(
             e.child,

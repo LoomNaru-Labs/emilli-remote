@@ -1356,10 +1356,16 @@ void showOnBlockDialog(
       showRequestElevationDialog(sessionId, dialogManager);
     }
 
+    // Emilli: when the other PC runs the app without installing it and Windows shows a
+    // confirmation window there, say in plain words why the picture looks frozen and what
+    // makes system windows clickable.
+    final content = type == 'on-uac'
+        ? 'emilli_uac_not_installed_tip'
+        : "${translate(text)}${type.contains('uac') ? '\n' : '\n\n'}${translate('request_elevation_tip')}";
     return CustomAlertDialog(
       title: null,
-      content: msgboxContent(type, title,
-          "${translate(text)}${type.contains('uac') ? '\n' : '\n\n'}${translate('request_elevation_tip')}"),
+      content: msgboxContent(
+          type, type == 'on-uac' ? 'emilli_uac_title' : title, content),
       actions: [
         dialogButton('Wait', onPressed: close, isOutline: true),
         dialogButton('Request Elevation', onPressed: submit),

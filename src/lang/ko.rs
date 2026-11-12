@@ -828,5 +828,18 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Forever", "영구"),
         ("To start a voice call, enable \"Audio capture\" on the \"Screen share\" page.", "음성 통화를 시작하려면 '화면 공유' 페이지에서 '오디오 캡처'를 사용함으로 하세요."),
         ("emilli-update-tip", "새 버전은 관리자가 보내 드립니다."),
+        // Emilli Remote additions
+        ("emilli_codec_title", "코덱"),
+        ("emilli_codec_hint_auto", "두 기기에 가장 잘 맞는 것을 알아서 고릅니다 (권장)"),
+        ("emilli_codec_hint_vp8", "가장 가볍습니다. 오래된 매장 PC용, 글자는 조금 덜 또렷합니다"),
+        ("emilli_codec_hint_vp9", "중간입니다. 화면이 멈추면 잠시 뒤 다시 또렷해집니다"),
+        ("emilli_codec_hint_av1", "가장 또렷합니다. 매장 PC의 CPU를 더 씁니다"),
+        ("emilli_codec_hint_h264", "매장 PC의 그래픽 칩을 써서 CPU 부담이 적습니다"),
+        ("emilli_codec_hint_h265", "H264처럼 그래픽 칩을 쓰고 데이터가 더 적습니다"),
+        ("emilli_codec_badge_tip", "지금 쓰는 코덱입니다. 누르면 바꿀 수 있습니다."),
+        ("emilli_uac_title", "Windows 확인 창"),
+        ("emilli_uac_not_installed_tip", "상대 PC에 Windows 확인 창이 떠 있어서 화면이 멈춘 것처럼 보입니다. 상대 PC에 Emilli Remote를 설치해야 시스템 창을 누를 수 있습니다. 상대 PC 오른쪽 아래 Emilli Remote 창에서 \"설치\"를 누르고, 매장에서 Windows 확인 창의 \"예\"를 한 번 눌러 주세요."),
+        ("emilli_install_for_system_prompts", "이 PC에 설치해야 시스템 창을 누를 수 있습니다"),
+        ("emilli_install_button", "설치"),
     ].iter().cloned().collect();
 }

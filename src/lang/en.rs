@@ -293,5 +293,18 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("android-logs-folder-tip", "Choose Android → media to store log files."),
         ("install-directory-not-empty-tip", "The selected folder is not empty. Installation may delete existing data. Consider choosing a different folder."),
         ("emilli-update-tip", "Your administrator sends new versions."),
+        // Emilli Remote additions
+        ("emilli_codec_title", "Codec"),
+        ("emilli_codec_hint_auto", "Picks what both devices handle best (recommended)"),
+        ("emilli_codec_hint_vp8", "Lightest, for an old store PC; text a little softer"),
+        ("emilli_codec_hint_vp9", "In between; sharp again a moment after the screen stops"),
+        ("emilli_codec_hint_av1", "Sharpest; uses more of the store PC's processor"),
+        ("emilli_codec_hint_h264", "Uses the store PC's graphics chip; easy on its processor"),
+        ("emilli_codec_hint_h265", "Graphics chip like H264, with less data"),
+        ("emilli_codec_badge_tip", "Codec in use. Click to change it."),
+        ("emilli_uac_title", "Windows confirmation window"),
+        ("emilli_uac_not_installed_tip", "A Windows confirmation window is open on the other PC, so its screen looks frozen here. System windows can be clicked only when Emilli Remote is installed on that PC. Press \"Install\" in the Emilli Remote window at the bottom right of that PC, and someone there presses \"Yes\" once in the Windows window."),
+        ("emilli_install_for_system_prompts", "System windows can be clicked only when Emilli Remote is installed on this PC."),
+        ("emilli_install_button", "Install"),
     ].iter().cloned().collect();
 }
