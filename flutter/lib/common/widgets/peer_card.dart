@@ -72,11 +72,9 @@ class _PeerCardState extends State<_PeerCard>
           if (peerTabModel.multiSelectionMode) {
             peerTabModel.select(peer);
           } else {
-            if (isMobile) {
-              widget.connect(context, peer.id);
-            } else {
-              peerTabModel.select(peer);
-            }
+            // Emilli Remote: one click on a PC in "My devices" opens it, on desktop as on
+            // mobile (REMOTE-EASY-3); a double-click still opens it once.
+            widget.connect(context, peer.id);
           }
         },
         onLongPress: () => peerTabModel.select(peer),

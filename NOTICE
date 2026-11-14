@@ -63,3 +63,5 @@ Branch easy3-windows (brief REMOTE-EASY-3), on top of windows-153-ui:
    invite link or the sign-up code); after sign-in only "내 기기" (the account's
    devices); Settings > Account has "이 PC를 내 계정에서 빼기"; the ID server's
    refusals and the account server's messages are plain sentences.
+   flutter/lib/common/widgets/peer_card.dart: one click on a device opens it on
+   desktop too (a double-click still opens it once).
