@@ -25,6 +25,8 @@ param(
     [Parameter(Mandatory)] [string] $Lib,
     [Parameter(Mandatory)] [string] $Out,
     [ValidateSet('inventory', 'check')] [string] $Mode = 'inventory',
+    # An earlier Emilli Remote Setup installed first: the state of a PC that upgrades.
+    [string] $Before = '',
     [string] $Tesseract = 'C:\Program Files\Tesseract-OCR\tesseract.exe'
 )
 $ErrorActionPreference = 'Stop'
@@ -211,6 +213,17 @@ function Shot-Scrolled([IntPtr] $h, [string] $name, [int] $px, [int] $py) {
     return $all
 }
 
+$W_CANCEL = K 0xCDE8, 0xC18C
+$W_OK = K 0xD655, 0xC778
+function Close-InWindowDialog([IntPtr] $h, $shot, [switch] $Ok) {
+    $b = $shot.Words | Where-Object { $_.Text -match "^(Cancel|$W_CANCEL)$" } | Select-Object -Last 1
+    if (-not $b -and $Ok) { $b = $shot.Words | Where-Object { $_.Text -match "^(OK|$W_OK)$" } | Select-Object -Last 1 }
+    if ($b) { Click-At ($b.X + [int]($b.W / 2)) ($b.Y + [int]($b.H / 2)) }
+    else { [SL]::Front($h); Start-Sleep -Milliseconds 300; [SL]::PressKey(0x1B) }
+    Start-Sleep -Seconds 1
+    Write-Host "  dialog closed by $(if ($b) { "its '$($b.Text)' button" } else { 'Escape' })"
+}
+
 # The words a picture of the settings page shows in its left column (the list of pages).
 function Find-Word($words, [string] $pattern, [int] $minX, [int] $maxX, [int] $minY = 0) {
     $words | Where-Object { $_.Text -match $pattern -and $_.X -ge $minX -and $_.X -le $maxX -and $_.Y -ge $minY } | Select-Object -First 1
@@ -266,7 +279,8 @@ function Scan-Files-Text([string] $dir, [string] $tag) {
         if ($na + $nu -eq 0) { continue }
         $textLike = $f.Extension -match '^(?i)\.(txt|toml|ini|log|json|xml|html?|inf|md|cfg|conf|csv|rtf)$' -or $f.Extension -eq ''
         if ($textLike) {
-            $text = [Text.Encoding]::UTF8.GetString($bytes)
+            $wide = ($bytes.Length -ge 2 -and $bytes[0] -eq 255 -and $bytes[1] -eq 254) -or $nu -gt $na
+            $text = if ($wide) { $u } else { [Text.Encoding]::UTF8.GetString($bytes) }
             $hits = @(($text -split "`r?`n") | Where-Object { $_ -match $Bad } | Select-Object -First 6)
             $isNotice = $f.Name -match '(?i)notice|licen[cs]e|open.?source'
             foreach ($h in $hits) {
@@ -542,10 +556,9 @@ function Visit-Pages([string] $lang) {
                     foreach ($row in $script:NetRows) {
                         Click-At ($f[0] + 320) ($f[1] + $row[1])
                         Start-Sleep -Seconds 2
-                        [void](Shot-Window $main.Hwnd "$name-$($row[0])-dialog")
+                        $d = Shot-Window $main.Hwnd "$name-$($row[0])-dialog"
                         Shot-Dialogs "$name-$($row[0])" $main.Hwnd
-                        [SL]::PressKey(0x1B)
-                        Start-Sleep -Seconds 1
+                        Close-InWindowDialog $main.Hwnd $d
                     }
                 }
             } else { Write-Host "  $t : no unlock button read" }
@@ -559,9 +572,8 @@ function Visit-Pages([string] $lang) {
             if ($script:NoticePoint) {
                 Click-At $script:NoticePoint[0] $script:NoticePoint[1]
                 Start-Sleep -Seconds 2
-                [void](Shot-Window $main.Hwnd "$name-notice")
-                [SL]::PressKey(0x1B)
-                Start-Sleep -Seconds 1
+                $d = Shot-Window $main.Hwnd "$name-notice"
+                Close-InWindowDialog $main.Hwnd $d -Ok
             } else { Write-Host "  About: no open-source notice link on this build" }
         }
     }
@@ -581,6 +593,18 @@ foreach ($k in @('ProductName', 'FileDescription', 'CompanyName', 'LegalCopyrigh
     if ([string]$vi.$k -match $Bad) { Found 'Setup file properties' $k ([string]$vi.$k) }
 }
 
+$beforeId = ''
+if ($Before) {
+    Step "the earlier Setup first ($(Split-Path -Leaf $Before)): a PC that upgrades"
+    $p = Start-Process -FilePath $Before -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$Out\setup-before.log")
+    $p.WaitForExit(600000) | Out-Null
+    $beforeId = (& $Exe --get-id | Out-String).Trim()
+    $beforeVer = (Get-Item $Exe).VersionInfo.ProductVersion
+    $beforeFiles = @(Get-ChildItem -Path $InstallDir -Force | ForEach-Object { $_.Name })
+    Info 'upgrade' 'before' "Setup exit $($p.ExitCode); program $beforeVer; PC number $beforeId; program folder: $($beforeFiles -join ', ')"
+    Start-Sleep -Seconds 5
+}
+
 Step 'Emilli Remote Setup, silently'
 $t0 = Get-Date
 $p = Start-Process -FilePath $Setup -PassThru -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/LOG=$Out\setup.log")
@@ -588,6 +612,20 @@ $p.WaitForExit(600000) | Out-Null
 Write-Host "Setup exit $($p.ExitCode) after $([int]((Get-Date) - $t0).TotalSeconds) s"
 if (-not (Test-Path $Exe)) { Problem 'the program was not installed'; Save-Found; throw 'not installed' }
 Start-Sleep -Seconds 10
+if ($Before) {
+    $afterId = (& $Exe --get-id | Out-String).Trim()
+    $afterVer = (Get-Item $Exe).VersionInfo.ProductVersion
+    $svc = Get-CimInstance Win32_Service -Filter "Name='EmilliRemote'"
+    $cfg = 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\EmilliRemote\config\EmilliRemote2.toml'
+    $server = if (Test-Path $cfg) { [string](Select-String -Path $cfg -Pattern '^custom-rendezvous-server' | Select-Object -First 1).Line } else { '' }
+    $afterFiles = @(Get-ChildItem -Path $InstallDir -Force | ForEach-Object { $_.Name })
+    Info 'upgrade' 'after' "program $afterVer; PC number $afterId; service $($svc.State) as '$($svc.DisplayName)'; $server; program folder: $($afterFiles -join ', ')"
+    if (-not ($beforeId -match '^\d{6,12}$' -and $afterId -eq $beforeId)) { Problem "upgrade: the PC number changed ($beforeId -> $afterId)" }
+    if (-not ($svc -and $svc.State -eq 'Running')) { Problem 'upgrade: the service is not running' }
+    if ($server -notmatch 'rd\.emillis\.net') { Problem "upgrade: the server setting was lost ($server)" }
+    $left = @($afterFiles | Where-Object { $_ -match $Bad })
+    if ($left.Count -gt 0) { Problem "upgrade: files under the old name are left: $($left -join ', ')" }
+}
 
 $main = Wait-For { Main-Window } 20
 if ($main) { Write-Host 'the main window is open after Setup' }

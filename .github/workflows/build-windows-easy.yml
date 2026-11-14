@@ -29,11 +29,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERSION: "1.5.3"
-  # Branch easy3-windows, workflow build-windows-emilli.yml, run 43591806846 (commit d52f1d5).
-  RUSTDESK_RUN_ID: "43591806846"
-  RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.3-windows-x86_64-unsigned
-  RUSTDESK_SHA256: ea6eeb6a38eb07ab11bc43b1f8b34ef8d398a16c73f8d08558da5bef0092e700
+  VERSION: "1.5.4"
+  # Branch easy3-windows, workflow build-windows-emilli.yml, run 43606833338 (commit 5180c8b).
+  RUSTDESK_RUN_ID: "43606833338"
+  RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.4-windows-x86_64-unsigned
+  RUSTDESK_SHA256: 7d4e81a78dda3d5cebf901921b19b63a72b257927213fc65d9a8834e74a89a9f
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"
@@ -214,7 +214,14 @@ jobs:
           - which: this-run
             run_id: ""
             version: ""
-            mode: inventory
+            mode: check
+          # A PC that upgrades: the released Setup first, then this run's (names, number, service,
+          # server setting and files under the old name checked after the upgrade).
+          - which: upgrade
+            run_id: ""
+            version: ""
+            mode: check
+            before_run_id: "43595051024"
     env:
       PUBLIC_REPO: LoomNaru-Labs/emilli-remote
       CAPTURE_COMMIT: cde731dff4725554a14748413d61506ef97f2b0d
@@ -241,6 +248,15 @@ jobs:
           run-id: ${{ matrix.run_id || github.run_id }}
           github-token: ${{ github.token }}
 
+      - name: Download the released Setup (the PC that upgrades)
+        if: matrix.before_run_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-1.5.3-windows
+          path: before
+          run-id: ${{ matrix.before_run_id }}
+          github-token: ${{ github.token }}
+
       - name: Display 1920x1080 at 100 %, capture helpers, OCR (tesseract with Korean)
         shell: powershell
         run: |
@@ -258,7 +274,10 @@ jobs:
         id: names
         continue-on-error: ${{ matrix.mode == 'inventory' }}
         shell: powershell
-        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\names-check.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:SETUP_VERSION.exe" -Lib "$env:GITHUB_WORKSPACE\capture\SessionLib.cs" -Out "$env:RUNNER_TEMP\names" -Mode ${{ matrix.mode }}
+        run: |
+          $before = @()
+          if ('${{ matrix.before_run_id }}') { $before = @('-Before', "$env:GITHUB_WORKSPACE\before\Emilli-Remote-Setup-1.5.3.exe") }
+          powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\names-check.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:SETUP_VERSION.exe" -Lib "$env:GITHUB_WORKSPACE\capture\SessionLib.cs" -Out "$env:RUNNER_TEMP\names" -Mode ${{ matrix.mode }} @before
 
       - name: Keep the pictures and the list
         if: always()

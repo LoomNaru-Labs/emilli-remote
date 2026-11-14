@@ -1,6 +1,6 @@
 ; Emilli Remote Setup (REMOTE-EASY-3: one path, no choices)
 ;
-; One page, one button: it installs Emilli Remote (our build of RustDesk 1.5.3 from branch
+; One page, one button: it installs Emilli Remote (our build of RustDesk 1.5.3, version 1.5.4, from branch
 ; easy3-windows of https://github.com/LoomNaru-Labs/emilli-remote, internal name "EmilliRemote",
 ; shown as "Emilli Remote" everywhere), saves our server in it and opens it. The person then
 ; presses "가입" (sign up) or "로그인" (sign in) in the app; PCs signed in to the same account open
@@ -18,16 +18,16 @@
 ; account server still knows it.
 ;
 ; Silent use, for IT and for the CI test:
-;   Emilli-Remote-Setup-1.5.3.exe /VERYSILENT /SUPPRESSMSGBOXES [/IDFILE=<file>] [/LOG=<file>]
+;   Emilli-Remote-Setup-1.5.4.exe /VERYSILENT /SUPPRESSMSGBOXES [/IDFILE=<file>] [/LOG=<file>]
 ; Exit code 0 means every step worked, 10 means a step failed.
 ;
 ; Compile: ISCC.exe /DProgramDir=<folder with the program> /DProgramSha256=<its SHA-256> EmilliRemoteSetup.iss
 ; The CI end-to-end test compiles the same script with /DServerHost, /DServerKey and /DApiUrl
 ; pointing at a test server on the runner; the release build uses the defaults below.
 
-#define AppVersion "1.5.3"
-#define ProgramExe "rustdesk-1.5.3-x86_64.exe"
-#define ProgramName "EmilliRemote-1.5.3-x86_64.exe"
+#define AppVersion "1.5.4"
+#define ProgramExe "rustdesk-1.5.4-x86_64.exe"
+#define ProgramName "EmilliRemote-1.5.4-x86_64.exe"
 #ifndef ServerHost
   #define ServerHost "rd.emillis.net"
 #endif
