@@ -65,3 +65,8 @@ Branch easy3-windows (brief REMOTE-EASY-3), on top of windows-153-ui:
    refusals and the account server's messages are plain sentences.
    flutter/lib/common/widgets/peer_card.dart: one click on a device opens it on
    desktop too (a double-click still opens it once).
+8. src/emilli.rs, src/hbbs_http/sync.rs, src/flutter_ffi.rs, flutter/lib/models/user_model.dart,
+   flutter/lib/models/group_model.dart, flutter/lib/common/widgets/emilli_account.dart: binding this
+   PC to an account, taking it out and saving its switch on the account server are signed with the
+   key this PC registered with the ID server (a server nonce, Ed25519); signing in alone binds
+   nothing. A sign-in the server ended (password changed) is said on the first screen.

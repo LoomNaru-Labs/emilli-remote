@@ -89,7 +89,7 @@ jobs:
         continue-on-error: true
         run: |
           cd flutter
-          flutter analyze --no-fatal-infos --no-fatal-warnings lib/common/widgets/toolbar.dart lib/common/widgets/dialog.dart lib/desktop/pages/desktop_setting_page.dart lib/desktop/widgets/remote_toolbar.dart lib/desktop/pages/server_page.dart lib/mobile/pages/remote_page.dart lib/mobile/pages/settings_page.dart lib/common/widgets/emilli_account.dart lib/desktop/pages/connection_page.dart lib/models/peer_tab_model.dart lib/common.dart lib/desktop/widgets/tabbar_widget.dart lib/common/widgets/peer_card.dart
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/common/widgets/toolbar.dart lib/common/widgets/dialog.dart lib/desktop/pages/desktop_setting_page.dart lib/desktop/widgets/remote_toolbar.dart lib/desktop/pages/server_page.dart lib/mobile/pages/remote_page.dart lib/mobile/pages/settings_page.dart lib/common/widgets/emilli_account.dart lib/desktop/pages/connection_page.dart lib/models/peer_tab_model.dart lib/common.dart lib/desktop/widgets/tabbar_widget.dart lib/common/widgets/peer_card.dart lib/models/user_model.dart lib/models/group_model.dart
 
       - name: Upload bridge files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -1211,6 +1211,18 @@ pub fn main_get_api_server() -> String {
     get_api_server()
 }
 
+/// Emilli Remote (REMOTE-EASY-3B): after sign-in, this PC joins the account, proven by its own key.
+/// "" when it did, otherwise the sentence to show.
+pub fn main_emilli_bind_this_pc(token: String) -> String {
+    crate::emilli::bind_this_pc(token)
+}
+
+/// Emilli Remote (REMOTE-EASY-3B): the owner takes this PC out of the account, proven by its own
+/// key. "" when done, otherwise the sentence to show.
+pub fn main_emilli_release_this_pc(token: String) -> String {
+    crate::emilli::release_this_pc(token)
+}
+
 pub fn main_deploy_device(token: String, id: String) -> String {
     #[cfg(target_os = "android")]
     {

@@ -49,6 +49,13 @@ Widget emilliStartCard(BuildContext context) {
         const SizedBox(height: 10),
         Text(translate('emilli_start_body'),
             style: theme.textTheme.bodyMedium),
+        if (bind.mainGetLocalOption(key: kEmilliSignedOut) == 'Y') ...[
+          const SizedBox(height: 10),
+          Text(translate('emilli_signed_out_tip'),
+              key: const ValueKey('emilli-signed-out'),
+              style: theme.textTheme.bodyMedium
+                  ?.copyWith(color: Colors.red.shade700)),
+        ],
         const SizedBox(height: 18),
         Row(
           children: [
@@ -219,31 +226,31 @@ Future<void> emilliReleaseThisPc() async {
     );
   });
   if (ok != true) return;
-  try {
-    final url = await bind.mainGetApiServer();
-    final headers = getHttpHeaders();
-    headers['Content-Type'] = 'application/json';
-    final resp = await http.post(Uri.parse('$url/api/emilli/release'),
-        headers: headers,
-        body: jsonEncode({
-          'id': await bind.mainGetMyId(),
-          'uuid': await bind.mainGetUuid(),
-        }));
-    if (resp.statusCode != 200) {
-      var error = 'HTTP ${resp.statusCode}';
-      try {
-        final data = jsonDecode(decode_http_response(resp));
-        if (data is Map && data['error'] != null) {
-          error = data['error'].toString();
-        }
-      } catch (_) {}
-      showToast(error, timeout: const Duration(seconds: 6));
-      return;
-    }
-  } catch (err) {
-    showToast('$err', timeout: const Duration(seconds: 6));
+  // Signed with this PC's own key in Rust (REMOTE-EASY-3B): "" when done, else a sentence.
+  final error = await bind.mainEmilliReleaseThisPc(
+      token: bind.mainGetLocalOption(key: 'access_token'));
+  if (error.isNotEmpty) {
+    showToast(error, timeout: const Duration(seconds: 8));
     return;
   }
   showToast(translate('emilli_release_done'));
   await gFFI.userModel.logOut();
+}
+
+/// After a sign-in (or a refresh) succeeds: this PC joins the account, proven by its own key
+/// (REMOTE-EASY-3B). Shows the reason when it did not.
+Future<void> emilliBindThisPc(String token) async {
+  if (token.isEmpty) return;
+  final error = await bind.mainEmilliBindThisPc(token: token);
+  if (error.isNotEmpty) {
+    showToast(error, timeout: const Duration(seconds: 10));
+  }
+}
+
+const kEmilliSignedOut = 'emilli-signed-out';
+
+/// The account server ended this PC's sign-in (the password was changed, or the administrator
+/// signed it out): the first screen says so until the next sign-in.
+Future<void> emilliMarkSignedOut() async {
+  await bind.mainSetLocalOption(key: kEmilliSignedOut, value: 'Y');
 }

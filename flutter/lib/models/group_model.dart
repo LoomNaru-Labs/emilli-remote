@@ -1,6 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/common/hbbs/hbbs.dart';
+import 'package:flutter_hbb/common/widgets/emilli_account.dart';
 import 'package:flutter_hbb/common/widgets/peers_view.dart';
 import 'package:flutter_hbb/models/model.dart';
 import 'package:flutter_hbb/models/peer_model.dart';
@@ -55,6 +56,8 @@ class GroupModel {
     initialized = true;
     platformFFI.tryHandle({'name': LoadEvent.group});
     if (_statusCode == 401) {
+      // Emilli Remote: the sign-in ended on the server (for example a password change).
+      await emilliMarkSignedOut();
       gFFI.userModel.reset(resetOther: true);
     } else {
       _saveCache();

@@ -857,6 +857,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_release_pc", "이 PC를 내 계정에서 빼기"),
         ("emilli_release_pc_tip", "이 PC를 지금 계정에서 빼고 로그아웃합니다. 그 뒤에는 다른 계정으로 이 PC에 로그인할 수 있습니다. 같은 계정의 다른 PC에서는 이 PC가 '내 기기'에서 사라집니다."),
         ("emilli_release_done", "이 PC를 계정에서 뺐습니다"),
+        ("emilli_signed_out_tip", "이 PC의 로그인이 끝났습니다. 계정 비밀번호가 바뀌었거나 관리자가 로그아웃시켰습니다. 새 비밀번호로 '로그인'을 눌러 주세요."),
         ("emilli_access_title", "같은 계정의 PC에서 들어오기"),
         ("emilli_access_direct", "바로 연결 (연결되는 동안 이 PC 화면에 표시됩니다)"),
         ("emilli_access_click", "이 PC 앞에 있는 사람이 수락해야 연결"),

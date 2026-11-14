@@ -324,6 +324,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_release_pc", "Remove this PC from my account"),
         ("emilli_release_pc_tip", "This PC leaves your account and signs out. Another account can then sign in on it. Your other PCs no longer list it under 'My devices'."),
         ("emilli_release_done", "This PC was removed from your account"),
+        ("emilli_signed_out_tip", "This PC was signed out: the account password was changed or the administrator signed it out. Press \"Sign in\" with the new password."),
         ("emilli_access_title", "Opening from PCs of the same account"),
         ("emilli_access_direct", "Connect at once (this PC shows the session while it lasts)"),
         ("emilli_access_click", "Someone at this PC accepts first"),

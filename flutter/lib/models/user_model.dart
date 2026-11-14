@@ -8,6 +8,7 @@ import 'package:flutter_hbb/models/ab_model.dart';
 import 'package:get/get.dart';
 
 import '../common.dart';
+import '../common/widgets/emilli_account.dart';
 import '../utils/http_service.dart' as http;
 import 'model.dart';
 import 'platform_model.dart';
@@ -83,6 +84,9 @@ class UserModel {
       refreshingUser = false;
       final status = response.statusCode;
       if (status == 401 || status == 400) {
+        // Emilli Remote: the account server ended this sign-in (for example the password was
+        // changed); the first screen says so.
+        if (status == 401) await emilliMarkSignedOut();
         reset(resetOther: status == 401);
         return;
       }
@@ -98,6 +102,8 @@ class UserModel {
 
       final user = UserPayload.fromJson(data);
       _parseAndUpdateUser(user);
+      // Emilli Remote (REMOTE-EASY-3B): this PC joins the account, proven by its own key.
+      emilliBindThisPc(token);
     } catch (e) {
       debugPrint('Failed to refreshCurrentUser: $e');
       // Surface failures in the address book / group tabs, which offer a
@@ -153,6 +159,7 @@ class UserModel {
     avatar.value = user.avatar;
     isAdmin.value = user.isAdmin;
     bind.mainSetLocalOption(key: 'user_info', value: jsonEncode(user));
+    bind.mainSetLocalOption(key: kEmilliSignedOut, value: '');
     if (isWeb) {
       // ugly here, tmp solution
       bind.mainSetLocalOption(key: 'verifier', value: user.verifier ?? '');
@@ -227,6 +234,11 @@ class UserModel {
 
     final isLogInDone = loginResponse.type == HttpType.kAuthResTypeToken &&
         loginResponse.access_token != null;
+    if (isLogInDone) {
+      // Emilli Remote (REMOTE-EASY-3B): signing in never binds this PC by itself; the PC then
+      // proves itself with its own key.
+      emilliBindThisPc(loginResponse.access_token!);
+    }
     if (isLogInDone && loginResponse.user != null) {
       _parseAndUpdateUser(loginResponse.user!);
     }

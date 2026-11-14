@@ -237,8 +237,13 @@ async fn start_hbbs_sync_async() {
                 v["id"] = json!(id);
                 v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
                 v["ver"] = json!(hbb_common::get_version_number(crate::VERSION));
-                // Emilli Remote: this PC's switch for same-account connections (src/emilli.rs).
-                v["emilli_access"] = json!(crate::emilli::account_access().as_str());
+                // Emilli Remote: this PC's switch for same-account connections (src/emilli.rs),
+                // signed with this PC's own key until the account server saved it (REMOTE-EASY-3B).
+                let emilli_access = crate::emilli::account_access().as_str();
+                v["emilli_access"] = json!(emilli_access);
+                if let Some(proof) = crate::emilli::access_proof(&id, emilli_access).await {
+                    v["emilli_proof"] = proof;
+                }
                 if !conns.is_empty() {
                     v["conns"] = json!(conns);
                 }
@@ -250,6 +255,11 @@ async fn start_hbbs_sync_async() {
                 }
                 if let Ok(s) = response {
                     if let Ok(mut rsp) = serde_json::from_str::<HashMap::<&str, Value>>(&s) {
+                        if let Some(saved) = rsp.remove("emilli_access_saved") {
+                            if let Some(saved) = saved.as_str() {
+                                crate::emilli::access_saved(saved);
+                            }
+                        }
                         if rsp.remove("sysinfo").is_some() {
                             info_uploaded.uploaded = false;
                             config::Status::set("sysinfo_hash", "".to_owned());
