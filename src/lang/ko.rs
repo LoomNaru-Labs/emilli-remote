@@ -864,5 +864,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_refused_not_allowed", "이 번호의 PC는 내 계정의 기기가 아니어서 열 수 없습니다. '내 기기' 목록에 있는 PC만 바로 열립니다. 이 PC를 써야 하면 이 PC의 계정 주인이나 관리자에게 권한을 받으세요."),
         ("emilli_refused_login", "먼저 Emilli Remote에 로그인해 주세요. 첫 화면의 '로그인'을 누르면 됩니다."),
         ("emilli_refused_unreachable", "계정 서버에 닿지 못했습니다. 잠시 뒤에 다시 연결해 주세요."),
+        ("Wrong user name or password", "이름이나 비밀번호가 맞지 않습니다"),
+        ("Too many attempts, try again later", "로그인 시도가 너무 많아 잠시 막혔습니다. 15분 뒤에 다시 해 주세요"),
+        ("This account is disabled", "사용할 수 없는 계정입니다. Emilli 담당자에게 문의해 주세요"),
+        ("Invalid token, please log in again", "로그인이 끝났습니다. 다시 로그인해 주세요"),
     ].iter().cloned().collect();
 }

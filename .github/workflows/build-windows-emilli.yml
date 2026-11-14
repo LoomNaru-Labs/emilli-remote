@@ -214,6 +214,9 @@ jobs:
         run: |
           python3 .\build.py --portable --flutter --skip-portable-pack --hwcodec --vram
           mv ./flutter/build/windows/x64/runner/Release ./rustdesk
+          # Emilli Remote: the program file carries the internal app name, as the installer expects
+          # (it installs "<app name>.exe"; RustDesk custom clients are renamed the same way).
+          Rename-Item ./rustdesk/rustdesk.exe EmilliRemote.exe
 
           # As upstream: the virtual display driver files.
           Invoke-WebRequest -Uri https://github.com/rustdesk-org/rdev/releases/download/usbmmidd_v2/usbmmidd_v2.zip -OutFile usbmmidd_v2.zip
@@ -267,12 +270,12 @@ jobs:
               b = open(path, "rb").read()
               n = struct.unpack("<H", b[4:6])[0]
               return [b[o:o + s] for s, o in (struct.unpack("<II", b[6 + 16 * i + 8:6 + 16 * i + 16]) for i in range(n))]
-          exe = open("rustdesk/rustdesk.exe", "rb").read()
+          exe = open("rustdesk/EmilliRemote.exe", "rb").read()
           dll = open("rustdesk/librustdesk.dll", "rb").read()
           aot = open("rustdesk/data/app.so", "rb").read()
           app_icons = ico_images("flutter/windows/runner/resources/app_icon.ico")
           checks = {
-              "app icon images inside rustdesk.exe (%d)" % len(app_icons): all(i in exe for i in app_icons),
+              "app icon images inside EmilliRemote.exe (%d)" % len(app_icons): all(i in exe for i in app_icons),
               "tray icon inside librustdesk.dll": open("res/tray-icon.ico", "rb").read() in dll,
               "in-app icon.svg is the Emilli one": open("rustdesk/data/flutter_assets/assets/icon.svg", "rb").read() == open("flutter/assets/icon.svg", "rb").read(),
               "name 'Emilli Remote' inside librustdesk.dll": b"Emilli Remote" in dll,
@@ -287,7 +290,7 @@ jobs:
         shell: powershell
         run: |
           $bad = 0
-          foreach ($f in @('rustdesk\rustdesk.exe', 'rustdesk\librustdesk.dll')) {
+          foreach ($f in @('rustdesk\EmilliRemote.exe', 'rustdesk\librustdesk.dll')) {
             $v = (Get-Item $f).VersionInfo
             foreach ($k in @('ProductName', 'FileDescription', 'CompanyName', 'InternalName', 'OriginalFilename')) {
               $val = [string]$v.$k
@@ -309,7 +312,7 @@ jobs:
           sed -i '/dpiAware/d' res/manifest.xml
           pushd ./libs/portable
           pip3 install -r requirements.txt
-          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/rustdesk.exe
+          python3 ./generate.py -f ../../rustdesk/ -o . -e ../../rustdesk/EmilliRemote.exe
           popd
           mkdir -p ./out
           mv ./target/release/rustdesk-portable-packer.exe ./out/rustdesk-${{ env.VERSION }}-x86_64.exe

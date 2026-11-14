@@ -8,7 +8,7 @@ use base::config::keys;
 use std::sync::{Arc, Mutex};
 
 // Emilli: the name shown in the tray tooltip. The internal app name (config folder, service,
-// pipes) stays "RustDesk".
+// pipes) is "EmilliRemote" since REMOTE-EASY-3.
 const DISPLAY_NAME: &str = "Emilli Remote";
 #[cfg(windows)]
 use std::time::Duration;

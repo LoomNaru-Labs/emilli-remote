@@ -36,3 +36,30 @@ Changes, each in its own commit:
 "RustDesk" is the name of the upstream project. This build is not made,
 endorsed or supported by the RustDesk developers. For the official RustDesk
 apps, go to https://rustdesk.com or https://github.com/rustdesk/rustdesk.
+
+Branch easy3-windows (brief REMOTE-EASY-3), on top of windows-153-ui:
+
+5. libs/hbb_common/src/config.rs, src/lang.rs, src/platform/windows.rs,
+   src/core_main.rs, src/flutter.rs, src/auth_2fa.rs, flutter/windows/runner/Runner.rc,
+   Cargo.toml, flutter/lib/common.dart, flutter/lib/desktop/widgets/tabbar_widget.dart,
+   flutter/lib/desktop/pages/desktop_setting_page.dart: one name everywhere. The
+   internal app name is "EmilliRemote" (install folder, settings folders, service,
+   pipes, registry keys; no spaces, for Windows service and command lines); the
+   name people see is "Emilli Remote" (translations, window titles, service display
+   name, shortcuts, Start menu folder, start-up shortcut, toasts, the 2FA label, the
+   program's file properties). No "powered by" line; About links to this repository.
+   Server settings are never read from the program's file name.
+6. src/emilli.rs, src/client.rs, src/server/connection.rs, src/hbbs_http/sync.rs,
+   libs/base/protos/message.proto (LoginRequest field 101): PCs signed in to the same
+   account open each other without the PC's own password. The controller asks the
+   account server for a one-time ticket bound to the connection's challenge; the PC
+   being opened asks the account server to confirm it. Per-PC switch
+   emilli-account-access (direct, click, off) in Settings > Security, sent with the
+   heartbeat. Test seam EMILLI_REMOTE_INSTANCE (a second copy with its own settings
+   on one Windows machine, for CI).
+7. flutter/lib/common/widgets/emilli_account.dart, flutter/lib/desktop/pages/connection_page.dart,
+   flutter/lib/models/peer_tab_model.dart, src/lang/en.rs, src/lang/ko.rs: before
+   sign-in the first screen shows "가입" and "로그인" (sign-up inside the app with an
+   invite link or the sign-up code); after sign-in only "내 기기" (the account's
+   devices); Settings > Account has "이 PC를 내 계정에서 빼기"; the ID server's
+   refusals and the account server's messages are plain sentences.
