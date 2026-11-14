@@ -1,0 +1,75 @@
+# REMOTE-EASY-3D: the Linux image of the patched RustDesk ID server (hbbs) for the Emilli Remote
+# release, built on a GitHub runner because the release PC has no Docker.
+# Source: upstream rustdesk-server tag 1.1.16 (commit pinned and checked in the Dockerfile) plus
+# server-hbbs/0001-accounts-gate.patch, the three files copied unchanged from the release commit
+# 468441a8 (deploy/rustdesk-accounts/hbbs); their SHA-256 are checked below. AGPL-3.0 like upstream.
+# Output: `docker save | gzip` of the image as a workflow artifact. Nothing is released, tagged or
+# pushed to a registry; no secret is used or printed.
+name: Build hbbs image (Linux)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [easy3-hbbs-image]
+
+permissions:
+  contents: read
+
+env:
+  TAG: emilli/rustdesk-hbbs:1.1.16-accounts2
+  PACKED: emilli-rustdesk-hbbs-1.1.16-accounts2.tar.gz
+  PATCH_SHA256: cd21bfdbd3800d140e2486908a6b85e2fcebf10d1dca849016b54ae4b18221b7
+  DOCKERFILE_SHA256: 6b621a4986ccf572b3148514f4860214b42f4b9896561b5e99aea1a1c4c053f3
+  BUILD_SH_SHA256: 75b2cf2ef1435f07ce351626b84e2626e12827fc4218fca615f45d27b9186214
+
+jobs:
+  image:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: The sources are those of the release commit
+        run: |
+          check() { h=$(sha256sum "$1" | cut -c1-64); echo "SOURCE $1 sha256 $h"; test "$h" = "$2"; }
+          check server-hbbs/0001-accounts-gate.patch "$PATCH_SHA256"
+          check server-hbbs/Dockerfile "$DOCKERFILE_SHA256"
+          check server-hbbs/build.sh "$BUILD_SH_SHA256"
+          echo "UPSTREAM tag $(grep -oP 'ARG RD_SERVER_TAG=\K\S+' server-hbbs/Dockerfile) commit $(grep -oP 'ARG RD_SERVER_COMMIT=\K[0-9a-f]{40}' server-hbbs/Dockerfile) (the build stops unless the clone is exactly this commit)"
+
+      - name: Build the image (build.sh, release profile)
+        run: |
+          docker version --format 'docker {{.Server.Version}}'
+          set -o pipefail
+          PROFILE=release bash server-hbbs/build.sh 2>&1 | tee "$RUNNER_TEMP/build.log" | tail -n 60
+          grep -E "rev-parse|git apply|files? changed" "$RUNNER_TEMP/build.log" | head -n 10 || true
+          echo "IMAGE-ID $(docker image inspect "$TAG" --format '{{.Id}}')"
+
+      - name: The binary starts (no network)
+        run: |
+          docker run --rm --network none "$TAG" sh -c 'ls -l /usr/bin/hbbs && sha256sum /usr/bin/hbbs'
+          docker run --rm --network none "$TAG" hbbs --version 2>&1 | head -n 3 || true
+          docker run --rm --network none "$TAG" hbbs --help > "$RUNNER_TEMP/help.txt" 2>&1 || true
+          head -n 12 "$RUNNER_TEMP/help.txt"
+          grep -q -- "--relay-servers" "$RUNNER_TEMP/help.txt"
+
+      - name: Pack (docker save | gzip) and check that a load gives the same image
+        run: |
+          id=$(docker image inspect "$TAG" --format '{{.Id}}')
+          docker save "$TAG" | gzip -9 > "$PACKED"
+          echo "PACKED $PACKED sha256 $(sha256sum "$PACKED" | cut -c1-64) size $(stat -c %s "$PACKED") bytes"
+          docker image rm "$TAG" > /dev/null
+          gunzip -c "$PACKED" | docker load
+          again=$(docker image inspect "$TAG" --format '{{.Id}}')
+          echo "IMAGE-ID-AFTER-LOAD $again"
+          test "$again" = "$id"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: emilli-rustdesk-hbbs-1.1.16-accounts2
+          path: ${{ env.PACKED }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 30

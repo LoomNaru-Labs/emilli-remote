@@ -1,0 +1,379 @@
+diff --git a/src/rendezvous_server.rs b/src/rendezvous_server.rs
+index dff45eb..c2b606d 100644
+--- a/src/rendezvous_server.rs
++++ b/src/rendezvous_server.rs
+@@ -16,7 +16,7 @@ use hbb_common::{
+         register_pk_response::Result::{TOO_FREQUENT, UUID_MISMATCH},
+         *,
+     },
+-    tcp::{listen_any, FramedStream},
++    tcp::{listen_any, Encrypt, FramedStream},
+     timeout,
+     tokio::{
+         self,
+@@ -31,7 +31,7 @@ use hbb_common::{
+     AddrMangle, ResultType,
+ };
+ use ipnetwork::Ipv4Network;
+-use sodiumoxide::crypto::sign;
++use sodiumoxide::crypto::{box_, secretbox, sign};
+ use std::{
+     collections::HashMap,
+     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+@@ -51,7 +51,8 @@ const REG_TIMEOUT: i64 = 30_000;
+ type TcpStreamSink = SplitSink<Framed<TcpStream, BytesCodec>, Bytes>;
+ type WsSink = SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, tungstenite::Message>;
+ enum Sink {
+-    TcpStream(TcpStreamSink),
++    // Emilli: the TCP sink carries the connection's cipher once the client completed the key exchange.
++    TcpStream(TcpStreamSink, Option<Encrypt>),
+     Ws(WsSink),
+ }
+ type Sender = mpsc::UnboundedSender<Data>;
+@@ -77,6 +78,120 @@ struct Inner {
+     mask: Option<Ipv4Network>,
+     local_ip: String,
+     sk: Option<sign::SecretKey>,
++    kx: Option<Arc<KeyExchangeState>>,
++    auth: AuthConfig,
++}
++
++// ---- Emilli accounts gate (RUSTDESK-ACCOUNTS-BUILD, 2026-10-15) ----
++// Server half of the original (version 0) key exchange that logged-in 1.5.0 clients require,
++// and the per-connection access check against rd-api. The key exchange follows upstream PR
++// rustdesk/rustdesk-server#400 (AGPL-3.0); this file stays AGPL-3.0.
++
++/// Our signed X25519 box key, sent as the first frame of every TCP connection on the main port.
++struct KeyExchangeState {
++    box_sk: box_::SecretKey,
++    hello: Vec<u8>,
++}
++
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++enum AuthMode {
++    Off,
++    Audit,
++    Enforce,
++}
++
++#[derive(Clone)]
++struct AuthConfig {
++    mode: AuthMode,
++    url: String,
++    secret: String,
++}
++
++const REFUSE_LOGIN: &str = "Please log in to Emilli Remote first (로그인이 필요합니다)";
++const REFUSE_ACCESS: &str = "This account cannot access this device (이 기기에 접근 권한이 없습니다)";
++const REFUSE_UNREACHABLE: &str = "Login server unreachable, try again (로그인 서버 연결 실패)";
++const INTERNAL_TIMEOUT_SECS: u64 = 2;
++
++impl AuthConfig {
++    fn from_env() -> Self {
++        let url = std::env::var("RD_API_INTERNAL_URL")
++            .unwrap_or_default()
++            .trim()
++            .trim_end_matches('/')
++            .to_owned();
++        let secret = std::env::var("RD_INTERNAL_SECRET")
++            .unwrap_or_default()
++            .trim()
++            .to_owned();
++        let mut mode = match std::env::var("RD_AUTH_MODE")
++            .unwrap_or_default()
++            .trim()
++            .to_lowercase()
++            .as_str()
++        {
++            "off" => AuthMode::Off,
++            "enforce" => AuthMode::Enforce,
++            _ => AuthMode::Audit,
++        };
++        if url.is_empty() && mode == AuthMode::Audit {
++            log::warn!("RD_API_INTERNAL_URL is not set, access checks are off");
++            mode = AuthMode::Off;
++        }
++        if mode != AuthMode::Off && secret.is_empty() {
++            log::warn!("RD_INTERNAL_SECRET is not set");
++        }
++        log::info!("access checks: mode={:?} api={}", mode, url);
++        Self { mode, url, secret }
++    }
++
++    fn mode_name(&self) -> &'static str {
++        match self.mode {
++            AuthMode::Off => "off",
++            AuthMode::Audit => "audit",
++            AuthMode::Enforce => "enforce",
++        }
++    }
++}
++
++fn make_key_exchange(sk: &Option<sign::SecretKey>) -> Option<Arc<KeyExchangeState>> {
++    let sk = sk.as_ref()?;
++    // A set top bit tells 1.5.0 clients to expect signed parameters (version 1); keep it clear.
++    let (pk, box_sk) = loop {
++        let (pk, box_sk) = box_::gen_keypair();
++        if pk.0[31] & 0x80 == 0 {
++            break (pk, box_sk);
++        }
++    };
++    let mut msg = RendezvousMessage::new();
++    msg.set_key_exchange(KeyExchange {
++        keys: vec![sign::sign(&pk.0, sk).into()],
++        ..Default::default()
++    });
++    let hello = msg.write_to_bytes().ok()?;
++    log::info!("key exchange: on");
++    Some(Arc::new(KeyExchangeState { box_sk, hello }))
++}
++
++/// Opens the client's sealed symmetric key. Errors (never panics) on anything malformed.
++fn open_key_exchange(ex: &KeyExchange, kx: &KeyExchangeState) -> ResultType<secretbox::Key> {
++    if ex.keys.len() != 2 {
++        bail!("expected 2 keys, got {}", ex.keys.len());
++    }
++    Encrypt::decode(&ex.keys[1], &ex.keys[0], &kx.box_sk)
++}
++
++fn internal_post(url: String, secret: String, body: String) -> Result<Vec<u8>, String> {
++    let resp = minreq::post(url)
++        .with_header("Content-Type", "application/json")
++        .with_header("X-Internal-Secret", secret)
++        .with_body(body)
++        .with_timeout(INTERNAL_TIMEOUT_SECS)
++        .send()
++        .map_err(|e| e.to_string())?;
++    if resp.status_code != 200 {
++        return Err(format!("status {}", resp.status_code));
++    }
++    Ok(resp.into_bytes())
+ }
+ 
+ #[derive(Clone)]
+@@ -101,6 +216,8 @@ impl RendezvousServer {
+     #[tokio::main(flavor = "multi_thread")]
+     pub async fn start(port: i32, serial: i32, key: &str, rmem: usize) -> ResultType<()> {
+         let (key, sk) = Self::get_server_sk(key);
++        let kx = make_key_exchange(&sk);
++        let auth = AuthConfig::from_env();
+         let nat_port = port - 1;
+         let ws_port = port + 2;
+         let pm = PeerMap::new().await?;
+@@ -141,6 +258,8 @@ impl RendezvousServer {
+                 sk,
+                 mask,
+                 local_ip,
++                kx,
++                auth,
+             }),
+         };
+         log::info!("mask: {:?}", rs.inner.mask);
+@@ -415,6 +534,7 @@ impl RendezvousServer {
+                         }
+                     }
+                     if changed {
++                        self.notify_peer(&id, &rk.uuid, &rk.pk, &ip);
+                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
+                     }
+                     let mut msg_out = RendezvousMessage::new();
+@@ -495,6 +615,17 @@ impl RendezvousServer {
+                     if let Some(sink) = sink.take() {
+                         self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
+                     }
++                    if let Some(reason) = self.check_access(&rf.token, &rf.id, addr, ws, "relay").await {
++                        let mut msg_out = RendezvousMessage::new();
++                        msg_out.set_relay_response(RelayResponse {
++                            refuse_reason: reason,
++                            ..Default::default()
++                        });
++                        allow_err!(self.send_to_tcp_sync(msg_out, addr).await);
++                        return true;
++                    }
++                    // The controller's login token is for us, never for the target device.
++                    rf.token = Default::default();
+                     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
+                         let mut msg_out = RendezvousMessage::new();
+                         rf.socket_addr = AddrMangle::encode(addr).into();
+@@ -688,6 +819,15 @@ impl RendezvousServer {
+             });
+             return Ok((msg_out, None));
+         }
++        // Before the peer lookup, so a refused user cannot learn whether an ID exists or is online.
++        if let Some(reason) = self.check_access(&ph.token, &ph.id, addr, ws, "punch").await {
++            let mut msg_out = RendezvousMessage::new();
++            msg_out.set_punch_hole_response(PunchHoleResponse {
++                other_failure: reason,
++                ..Default::default()
++            });
++            return Ok((msg_out, None));
++        }
+         let id = ph.id;
+         // punch hole request from A, relay to B,
+         // check if in same intranet first,
+@@ -823,7 +963,11 @@ impl RendezvousServer {
+         if let Some(sink) = sink.as_mut() {
+             if let Ok(bytes) = msg.write_to_bytes() {
+                 match sink {
+-                    Sink::TcpStream(s) => {
++                    Sink::TcpStream(s, enc) => {
++                        let bytes = match enc.as_mut() {
++                            Some(enc) => enc.enc(&bytes),
++                            None => bytes,
++                        };
+                         allow_err!(s.send(Bytes::from(bytes)).await);
+                     }
+                     Sink::Ws(ws) => {
+@@ -880,6 +1024,99 @@ impl RendezvousServer {
+         Ok(())
+     }
+ 
++    /// Asks rd-api whether `token` may open `target_id`. Returns the refusal text when the
++    /// connection must be refused: in enforce mode on deny or error, in audit mode only on a deny
++    /// for a target rd-api marks as enforced; otherwise the decision is only logged.
++    async fn check_access(
++        &self,
++        token: &str,
++        target_id: &str,
++        addr: SocketAddr,
++        ws: bool,
++        kind: &'static str,
++    ) -> Option<String> {
++        let auth = &self.inner.auth;
++        if auth.mode == AuthMode::Off {
++            return None;
++        }
++        let ip = try_into_v4(addr).ip().to_string();
++        let body = serde_json::json!({
++            "token": token,
++            "target_id": target_id,
++            "kind": kind,
++            "ip": ip,
++            "ws": ws,
++            "mode": auth.mode_name(),
++        })
++        .to_string();
++        let url = format!("{}/internal/authorize", auth.url);
++        let secret = auth.secret.clone();
++        let res = match tokio::task::spawn_blocking(move || internal_post(url, secret, body)).await {
++            Ok(r) => r,
++            Err(e) => Err(e.to_string()),
++        }
++        .and_then(|bytes| {
++            serde_json::from_slice::<serde_json::Value>(&bytes).map_err(|e| e.to_string())
++        });
++        match res {
++            Ok(v) => {
++                let allow = v.get("allow").and_then(|x| x.as_bool()).unwrap_or(false);
++                let enforced = v.get("enforce").and_then(|x| x.as_bool()).unwrap_or(false);
++                let reason = v.get("reason").and_then(|x| x.as_str()).unwrap_or("");
++                let user = v.get("user").and_then(|x| x.as_str()).unwrap_or("");
++                let deny = !allow && (auth.mode == AuthMode::Enforce || enforced);
++                log::info!(
++                    "access {} to {} from {} user={:?} reason={} result={}",
++                    kind,
++                    target_id,
++                    ip,
++                    user,
++                    reason,
++                    if allow {
++                        "allow"
++                    } else if deny {
++                        "deny"
++                    } else {
++                        "would_deny"
++                    }
++                );
++                if !deny {
++                    None
++                } else if reason == "not_logged_in" || reason == "invalid_token" {
++                    Some(REFUSE_LOGIN.to_owned())
++                } else {
++                    Some(REFUSE_ACCESS.to_owned())
++                }
++            }
++            Err(err) => {
++                log::error!("access check {} to {} from {} failed: {}", kind, target_id, ip, err);
++                if auth.mode == AuthMode::Enforce {
++                    Some(REFUSE_UNREACHABLE.to_owned())
++                } else {
++                    None
++                }
++            }
++        }
++    }
++
++    /// Tells rd-api the uuid and public key that registered an ID: a PC is bound only by a request signed with that key.
++    fn notify_peer(&self, id: &str, uuid: &[u8], pk: &[u8], ip: &str) {
++        let auth = &self.inner.auth;
++        if auth.mode == AuthMode::Off {
++            return;
++        }
++        let body =
++            serde_json::json!({"id": id, "uuid_b64": base64::encode(uuid), "pk_b64": base64::encode(pk), "ip": ip}).to_string();
++        let url = format!("{}/internal/peer", auth.url);
++        let secret = auth.secret.clone();
++        let id = id.to_owned();
++        tokio::task::spawn_blocking(move || {
++            if let Err(err) = internal_post(url, secret, body) {
++                log::warn!("peer update for {} failed: {}", id, err);
++            }
++        });
++    }
++
+     async fn check_ip_blocker(&self, ip: &str, id: &str) -> bool {
+         let mut lock = IP_BLOCKER.lock().await;
+         let now = Instant::now();
+@@ -1177,9 +1414,49 @@ impl RendezvousServer {
+                 }
+             }
+         } else {
+-            let (a, mut b) = Framed::new(stream, BytesCodec::new()).split();
+-            sink = Some(Sink::TcpStream(a));
+-            while let Ok(Some(Ok(bytes))) = timeout(30_000, b.next()).await {
++            let (mut a, mut b) = Framed::new(stream, BytesCodec::new()).split();
++            let kx = self.inner.kx.clone();
++            if let Some(kx) = kx.as_ref() {
++                // Offer the key exchange first. Clients that do not want it skip this message.
++                if let Err(err) = a.send(Bytes::from(kx.hello.clone())).await {
++                    log::debug!("Key exchange offer to {:?} failed: {}", addr, err);
++                    return Ok(());
++                }
++            }
++            sink = Some(Sink::TcpStream(a, None));
++            let mut dec: Option<Encrypt> = None;
++            let mut first = true;
++            while let Ok(Some(Ok(mut bytes))) = timeout(30_000, b.next()).await {
++                if let Some(enc) = dec.as_mut() {
++                    if enc.dec(&mut bytes).is_err() {
++                        log::warn!("Decryption failed on tcp connection from {:?}", addr);
++                        break;
++                    }
++                } else if first {
++                    first = false;
++                    if let Some(kx) = kx.as_ref() {
++                        if let Ok(RendezvousMessage {
++                            union: Some(rendezvous_message::Union::KeyExchange(ex)),
++                            ..
++                        }) = RendezvousMessage::parse_from_bytes(&bytes)
++                        {
++                            match open_key_exchange(&ex, kx) {
++                                Ok(k) => {
++                                    let enc = Encrypt::new(k);
++                                    if let Some(Sink::TcpStream(_, e)) = sink.as_mut() {
++                                        *e = Some(enc.clone());
++                                    }
++                                    dec = Some(enc);
++                                    continue;
++                                }
++                                Err(err) => {
++                                    log::warn!("Key exchange from {:?} failed: {}", addr, err);
++                                    break;
++                                }
++                            }
++                        }
++                    }
++                }
+                 if !self.handle_tcp(&bytes, &mut sink, addr, key, ws).await {
+                     break;
+                 }
