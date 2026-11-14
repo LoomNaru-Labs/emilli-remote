@@ -193,3 +193,86 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Install, check, uninstall: ${{ steps.check.outcome }}"
+
+  # REMOTE-EASY-3E: every place a person could still see the name of the software Emilli Remote is
+  # built on, after an install: pictures of every page read by OCR, and the installed state
+  # (windows-easy/names-check.ps1). "released" is the Setup on the download page since 2026-11-14
+  # (run 43595051024), kept as the picture of "before"; "this-run" is the Setup built above.
+  names:
+    name: Where the old name shows (${{ matrix.which }})
+    needs: build
+    runs-on: windows-latest
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - which: released
+            run_id: "43595051024"
+            version: "1.5.3"
+            mode: inventory
+          - which: this-run
+            run_id: ""
+            version: ""
+            mode: inventory
+    env:
+      PUBLIC_REPO: LoomNaru-Labs/emilli-remote
+      CAPTURE_COMMIT: cde731dff4725554a14748413d61506ef97f2b0d
+      MATRIX_VERSION: ${{ matrix.version }}
+    steps:
+      - name: Checkout the check script
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          sparse-checkout: windows-easy
+          persist-credentials: false
+
+      - name: Which Setup
+        shell: pwsh
+        run: |
+          $v = if ($env:MATRIX_VERSION) { $env:MATRIX_VERSION } else { $env:VERSION }
+          "SETUP_VERSION=$v" >> $env:GITHUB_ENV
+          Write-Host "Setup $v from run ${{ matrix.run_id || github.run_id }}"
+
+      - name: Download the Setup
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-${{ env.SETUP_VERSION }}-windows
+          path: setup
+          run-id: ${{ matrix.run_id || github.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Display 1920x1080 at 100 %, capture helpers, OCR (tesseract with Korean)
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path capture | Out-Null
+          Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/$env:PUBLIC_REPO/$env:CAPTURE_COMMIT/session-capture/SessionLib.cs" -OutFile capture\SessionLib.cs
+          Invoke-WebRequest -UseBasicParsing -Uri "https://raw.githubusercontent.com/$env:PUBLIC_REPO/$env:CAPTURE_COMMIT/windows-capture/capture-display.ps1" -OutFile capture\capture-display.ps1
+          powershell -NoProfile -ExecutionPolicy Bypass -File capture\capture-display.ps1 -Width 1920 -Height 1080 -Scale 100
+          choco install tesseract -y --no-progress | Select-Object -Last 3
+          $tessdata = 'C:\Program Files\Tesseract-OCR\tessdata'
+          Invoke-WebRequest -UseBasicParsing -Uri 'https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/kor.traineddata' -OutFile "$tessdata\kor.traineddata"
+          Write-Host "kor.traineddata SHA-256 $((Get-FileHash -Algorithm SHA256 "$tessdata\kor.traineddata").Hash.ToLower())"
+          & 'C:\Program Files\Tesseract-OCR\tesseract.exe' --version 2>&1 | Select-Object -First 1
+
+      - name: Install, picture every page, read the installed state
+        id: names
+        continue-on-error: ${{ matrix.mode == 'inventory' }}
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\names-check.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:SETUP_VERSION.exe" -Lib "$env:GITHUB_WORKSPACE\capture\SessionLib.cs" -Out "$env:RUNNER_TEMP\names" -Mode ${{ matrix.mode }}
+
+      - name: Keep the pictures and the list
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: emilli-remote-names-${{ matrix.which }}
+          path: ${{ runner.temp }}/names
+          retention-days: ${{ env.RETENTION_DAYS }}
+          if-no-files-found: warn
+
+      - name: Verdict
+        if: always()
+        shell: powershell
+        run: |
+          Write-Host "Where the old name shows (${{ matrix.which }}, ${{ matrix.mode }}): ${{ steps.names.outcome }}"
+          $f = "$env:RUNNER_TEMP\names\found.txt"
+          if (Test-Path $f) { Get-Content $f | Where-Object { $_ -like 'FOUND *' } | Measure-Object | ForEach-Object { Write-Host "FOUND lines: $($_.Count)" } }
