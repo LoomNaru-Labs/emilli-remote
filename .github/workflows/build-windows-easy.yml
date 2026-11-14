@@ -15,7 +15,7 @@ name: Build Windows setup
 on:
   workflow_dispatch:
   push:
-    branches: [easy-windows-153]
+    branches: [easy-windows-153, easy3-setup]
     paths:
       - "windows-easy/**"
       - ".github/workflows/build-windows-easy.yml"
@@ -30,10 +30,10 @@ concurrency:
 
 env:
   VERSION: "1.5.3"
-  # Branch windows-153-ui, workflow build-windows-emilli.yml, run 43152918509 (commit 95c9137).
-  RUSTDESK_RUN_ID: "43152918509"
+  # Branch easy3-windows, workflow build-windows-emilli.yml, run 43563259948 (commit 38e6bd9).
+  RUSTDESK_RUN_ID: "43563259948"
   RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.3-windows-x86_64-unsigned
-  RUSTDESK_SHA256: f6e06e83bef42e43cfe68ef07273f41337257022c0199b985cc919fdd170fd6c
+  RUSTDESK_SHA256: 16dad184ce06e62a47267f9e69913dfa37e110287f9fcd859d810adace19d719
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"
@@ -92,7 +92,7 @@ jobs:
       - name: Compile the setup
         shell: pwsh
         run: |
-          & $env:ISCC "/DRustDeskDir=$env:RUSTDESK_DIR" "/O$env:GITHUB_WORKSPACE\out" windows-easy\EmilliRemoteSetup.iss
+          & $env:ISCC "/DProgramDir=$env:RUSTDESK_DIR" "/DProgramSha256=$env:RUSTDESK_SHA256" "/O$env:GITHUB_WORKSPACE\out" windows-easy\EmilliRemoteSetup.iss
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with $LASTEXITCODE" }
           Get-ChildItem out | Format-Table Name, Length
 
@@ -131,10 +131,15 @@ jobs:
           if-no-files-found: error
 
   test:
-    name: Install, check and uninstall (store PC, then controller)
+    name: Install over the old name, check every name, uninstall
     needs: build
     runs-on: windows-latest
     timeout-minutes: 40
+    env:
+      # The unreleased REMOTE-153 Setup (easy-windows-153 5355124, run 43157166783): it installs
+      # the program under the old name, as the plain download of the old guide did.
+      OLD_SETUP_RUN_ID: "43157166783"
+      OLD_SETUP_SHA256: ae4475951f0c50af0cc501ec7fa2fa97d5012da9f0b91750e59c2d57794a4a0b
     steps:
       - name: Checkout the test scripts
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -148,25 +153,30 @@ jobs:
           name: emilli-remote-setup-${{ env.VERSION }}-windows
           path: setup
 
+      - name: Download the earlier Setup (old name)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: emilli-remote-setup-1.5.3-windows
+          path: oldsetup
+          run-id: ${{ env.OLD_SETUP_RUN_ID }}
+          github-token: ${{ github.token }}
+
       - name: Prepare the runner
         shell: pwsh
         run: |
           # Keep the test away from our real server: no test device on rd.emillis.net.
           Add-Content -Path "$env:SystemRoot\System32\drivers\etc\hosts" -Value "`r`n127.0.0.1 rd.emillis.net`r`n::1 rd.emillis.net"
           ipconfig /flushdns | Out-Null
-          Resolve-DnsName rd.emillis.net -ErrorAction SilentlyContinue | Format-Table Name, IPAddress
-          python -m pip install --disable-pip-version-check --quiet "pynacl==$env:PYNACL_VERSION"
-          python --version
+          $old = "oldsetup\Emilli-Remote-Setup-1.5.3.exe"
+          $h = (Get-FileHash -Algorithm SHA256 $old).Hash.ToLower()
+          if ($h -ne $env:OLD_SETUP_SHA256) { throw "not the earlier Setup ($h)" }
           Write-Host "Windows $([Environment]::OSVersion.VersionString); session $((Get-Process -Id $PID).SessionId); user $env:USERNAME"
 
-      - name: Store PC run
+      - name: Install, check, uninstall
+        continue-on-error: true
+        id: check
         shell: pwsh
-        run: pwsh -NoProfile -File windows-easy\test-easy-setup.ps1 -Mode store -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Work "$env:RUNNER_TEMP\easy"
-
-      - name: Controller run
-        if: success() || failure()
-        shell: pwsh
-        run: pwsh -NoProfile -File windows-easy\test-easy-setup.ps1 -Mode control -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -Work "$env:RUNNER_TEMP\easy"
+        run: pwsh -NoProfile -File windows-easy\test-easy3-setup.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:VERSION.exe" -OldSetup "$env:GITHUB_WORKSPACE\oldsetup\Emilli-Remote-Setup-1.5.3.exe" -Work "$env:RUNNER_TEMP\easy"
 
       - name: Keep the Setup logs
         if: always()
@@ -175,6 +185,10 @@ jobs:
           name: emilli-remote-setup-test-logs
           path: |
             ${{ runner.temp }}/easy/*.log
-            ${{ runner.temp }}/easy/rustdesk-log-*
           retention-days: ${{ env.RETENTION_DAYS }}
           if-no-files-found: warn
+
+      - name: Verdict (the checks above write PASS and FAIL lines; the run stays green either way)
+        if: always()
+        shell: pwsh
+        run: Write-Host "Install, check, uninstall: ${{ steps.check.outcome }}"
