@@ -191,4 +191,5 @@ jobs:
       - name: Verdict (the checks above write PASS and FAIL lines; the run stays green either way)
         if: always()
         shell: pwsh
-        run: Write-Host "Install, check, uninstall: ${{ steps.check.outcome }}"
+        run: |
+          Write-Host "Install, check, uninstall: ${{ steps.check.outcome }}"
