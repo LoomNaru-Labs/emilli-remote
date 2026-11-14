@@ -246,11 +246,19 @@ function Version-Fields([string] $file) {
     return $r
 }
 
+function Read-Shared([string] $path) {
+    try {
+        $fs = New-Object IO.FileStream($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        try { $ms = New-Object IO.MemoryStream; $fs.CopyTo($ms); return , $ms.ToArray() } finally { $fs.Dispose() }
+    } catch { return $null }
+}
+
 function Scan-Files-Text([string] $dir, [string] $tag) {
     if (-not (Test-Path $dir)) { return }
     foreach ($f in @(Get-ChildItem -Path $dir -Recurse -File -Force -ErrorAction SilentlyContinue)) {
         if ($f.Length -gt 300MB) { continue }
-        $bytes = [IO.File]::ReadAllBytes($f.FullName)
+        $bytes = Read-Shared $f.FullName
+        if ($null -eq $bytes) { Add-Line 'INFO' 'file not readable' $f.FullName 'held open by a running program'; continue }
         $a = [Text.Encoding]::GetEncoding(28591).GetString($bytes)
         $u = [Text.Encoding]::Unicode.GetString($bytes)
         $na = ([regex]::Matches($a, $Bad)).Count
@@ -258,7 +266,7 @@ function Scan-Files-Text([string] $dir, [string] $tag) {
         if ($na + $nu -eq 0) { continue }
         $textLike = $f.Extension -match '^(?i)\.(txt|toml|ini|log|json|xml|html?|inf|md|cfg|conf|csv|rtf)$' -or $f.Extension -eq ''
         if ($textLike) {
-            $text = [IO.File]::ReadAllText($f.FullName)
+            $text = [Text.Encoding]::UTF8.GetString($bytes)
             $hits = @(($text -split "`r?`n") | Where-Object { $_ -match $Bad } | Select-Object -First 6)
             $isNotice = $f.Name -match '(?i)notice|licen[cs]e|open.?source'
             foreach ($h in $hits) {
@@ -304,6 +312,7 @@ function Scan-Installed([string] $phase) {
     foreach ($n in $names) {
         $leaf = Split-Path -Leaf $n
         if ($leaf -notmatch $Bad) { continue }
+        if ($n -match '(?i)^C:\\hostedtoolcache\\') { continue }  # the runner's own tools
         if ($n -match '(?i)^C:\\Windows\\Prefetch\\|\\AppData\\Local\\Temp\\|^C:\\Windows\\Temp\\|\\Windows\\WinSxS\\') { Add-Line 'HIDDEN' 'file name' $n $leaf }
         else { Found 'file name' $n $leaf }
     }
@@ -423,6 +432,9 @@ function Scan-Installed([string] $phase) {
 $TabOrder = @('General', 'Security', 'Network', 'Display', 'Account', 'Printer', 'About')
 $script:TabPoints = @{}
 $script:UnlockPoints = @{}
+$script:Tabs = $TabOrder
+$script:NoticePoint = $null
+$script:NetRows = @(@('server', 120), @('proxy', 169))
 
 function Visit-Pages([string] $lang) {
     Step "the program's pages in $lang"
@@ -441,7 +453,12 @@ function Visit-Pages([string] $lang) {
 
     # A number typed on the first screen and Enter: the session window and what it says when the
     # server cannot be reached (rd.emillis.net is blocked here).
+    $f = [SL]::Clip($main.Hwnd)
+    Click-At ($f[0] + 394) ($f[1] + 135)
+    Start-Sleep -Milliseconds 600
     [void][SL]::TypeKeys('123456789', 30)
+    Start-Sleep -Milliseconds 400
+    [void](Shot-Window $main.Hwnd "$lang-02-number-typed")
     [SL]::PressKey(0x0D)
     Start-Sleep -Seconds 12
     Shot-Dialogs "$lang-02-connect" $main.Hwnd
@@ -470,25 +487,26 @@ function Visit-Pages([string] $lang) {
             if ($word) { $script:TabPoints[$t] = @(($word.X + [int]($word.W / 2)), ($word.Y + [int]($word.H / 2))) }
             else { Write-Host "  settings page list: '$t' not read on the picture" }
         }
-        # Pages not read are placed from those read.
+        # General is drawn as selected and is often not read: it is the row above Security. A page
+        # not read otherwise is a page this build does not have (1.5.4 has no Printer page).
+        if (-not $script:TabPoints.ContainsKey('General') -and $script:TabPoints.ContainsKey('Security')) {
+            $q = $script:TabPoints['Security']; $script:TabPoints['General'] = @($q[0], ($q[1] - 42))
+        }
         $known = @($TabOrder | Where-Object { $script:TabPoints.ContainsKey($_) })
         if ($known.Count -ge 2) {
-            $i0 = [array]::IndexOf($TabOrder, $known[0]); $p0 = $script:TabPoints[$known[0]]
-            $i1 = [array]::IndexOf($TabOrder, $known[-1]); $p1 = $script:TabPoints[$known[-1]]
-            $step = if ($i1 -ne $i0) { ($p1[1] - $p0[1]) / ($i1 - $i0) } else { 42 }
-            foreach ($t in $TabOrder) {
-                if (-not $script:TabPoints.ContainsKey($t)) { $i = [array]::IndexOf($TabOrder, $t); $script:TabPoints[$t] = @($p0[0], [int]($p0[1] + ($i - $i0) * $step)) }
-            }
+            $script:Tabs = $known
         } else {
             Problem 'the list of settings pages was not read; pages placed by their known size'
             for ($i = 0; $i -lt $TabOrder.Count; $i++) { $script:TabPoints[$TabOrder[$i]] = @(($f[0] + 70), ($f[1] + 28 + 62 + 21 + 42 * $i)) }
+            $script:Tabs = $TabOrder
         }
-        Write-Host "  settings pages at: $(($TabOrder | ForEach-Object { "$_ $($script:TabPoints[$_] -join ',')" }) -join '; ')"
+        Write-Host "  settings pages at: $(($script:Tabs | ForEach-Object { "$_ $($script:TabPoints[$_] -join ',')" }) -join '; ')"
+        Info 'settings pages' $lang ($script:Tabs -join ', ')
     }
     $px = $f[0] + [int](($f[2] + 230) / 2)
     $py = $f[1] + [int]($f[3] / 2)
     $n = 3
-    foreach ($t in $TabOrder) {
+    foreach ($t in $script:Tabs) {
         $n++
         $pt = $script:TabPoints[$t]
         Click-At $pt[0] $pt[1]
@@ -501,6 +519,7 @@ function Visit-Pages([string] $lang) {
             if ($lang -eq 'en') {
                 $u = $words | Where-Object { $_.Text -match '^Unlock' -and $_.X -gt ($f[0] + 230) } | Select-Object -First 1
                 if ($u) { $script:UnlockPoints[$t] = @(($u.X + [int]($u.W / 2)), ($u.Y + [int]($u.H / 2))) }
+                else { $script:UnlockPoints[$t] = @(($f[0] + 478), ($f[1] + 61)) }  # white on blue, not read
             }
             if ($script:UnlockPoints.ContainsKey($t)) {
                 $q = $script:UnlockPoints[$t]
@@ -510,8 +529,40 @@ function Visit-Pages([string] $lang) {
                 $main = Main-Window
                 [SL]::Front($main.Hwnd)
                 Start-Sleep -Seconds 1
-                [void](Shot-Scrolled $main.Hwnd "$name-unlocked" $px $py)
+                $uw = @(Shot-Scrolled $main.Hwnd "$name-unlocked" $px $py)
+                if ($t -eq 'Network') {
+                    # The two dialogs of the network page: servers, proxy (rows read on the English
+                    # page; else where they are once the unlock button is gone).
+                    if ($lang -eq 'en') {
+                        $r1 = $uw | Where-Object { $_.Text -match '^ID/Relay' } | Select-Object -First 1
+                        $r2 = $uw | Where-Object { $_.Text -match '^Socks5' } | Select-Object -First 1
+                        $script:NetRows = @(@('server', $(if ($r1) { $r1.Y + [int]($r1.H / 2) - $f[1] } else { 120 })), @('proxy', $(if ($r2) { $r2.Y + [int]($r2.H / 2) - $f[1] } else { 169 })))
+                        Write-Host "  network rows at: $(($script:NetRows | ForEach-Object { "$($_[0]) $($_[1])" }) -join '; ')"
+                    }
+                    foreach ($row in $script:NetRows) {
+                        Click-At ($f[0] + 320) ($f[1] + $row[1])
+                        Start-Sleep -Seconds 2
+                        [void](Shot-Window $main.Hwnd "$name-$($row[0])-dialog")
+                        Shot-Dialogs "$name-$($row[0])" $main.Hwnd
+                        [SL]::PressKey(0x1B)
+                        Start-Sleep -Seconds 1
+                    }
+                }
             } else { Write-Host "  $t : no unlock button read" }
+        }
+        # About: the open-source notice (1.5.4), the one page allowed to name the original work.
+        if ($t -eq 'About') {
+            if ($lang -eq 'en') {
+                $o = $words | Where-Object { $_.Text -match '^Open-source$|^notice$' -and $_.X -gt ($f[0] + 230) } | Select-Object -First 1
+                if ($o) { $script:NoticePoint = @(($o.X + [int]($o.W / 2)), ($o.Y + [int]($o.H / 2))) }
+            }
+            if ($script:NoticePoint) {
+                Click-At $script:NoticePoint[0] $script:NoticePoint[1]
+                Start-Sleep -Seconds 2
+                [void](Shot-Window $main.Hwnd "$name-notice")
+                [SL]::PressKey(0x1B)
+                Start-Sleep -Seconds 1
+            } else { Write-Host "  About: no open-source notice link on this build" }
         }
     }
     Shot-Dialogs "$lang-90-after-pages" $main.Hwnd
