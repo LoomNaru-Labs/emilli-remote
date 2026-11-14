@@ -89,7 +89,8 @@ inline DWORD InstallService(const wchar_t* name, const wchar_t* executable,
   }
   const std::wstring binary_path =
       L"\"" + std::wstring(executable) + L"\" --service";
-  const std::wstring display_name = std::wstring(name) + L" Service";
+  // Emilli Remote: the service shows as "Emilli Remote" in Windows' service list.
+  const std::wstring display_name = L"Emilli Remote";
   ServiceHandle manager(
       OpenSCManagerW(nullptr, nullptr,
                      SC_MANAGER_CONNECT | SC_MANAGER_CREATE_SERVICE),
