@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher_string.dart';
 
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
+import '../../common/widgets/emilli_account.dart';
 
 const double _kTabWidth = 200;
 const double _kTabHeight = 42;
@@ -1039,6 +1040,8 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             preventMouseKeyBuilder(
               block: locked,
               child: Column(children: [
+                // Emilli Remote: how PCs of the same account open this PC.
+                emilliAccess(context),
                 permissions(context),
                 password(context),
                 _Card(title: '2FA', children: [tfa()]),
@@ -1049,6 +1052,37 @@ class _SafetyState extends State<_Safety> with AutomaticKeepAliveClientMixin {
             ),
           ],
         )).marginOnly(bottom: _kListViewBottomMargin);
+  }
+
+  // Emilli Remote: the per-PC switch for same-account connections (src/emilli.rs). Stored in this
+  // PC's settings, reported to the account server with the heartbeat, and checked on both sides.
+  Widget emilliAccess(BuildContext context) {
+    final current = bind.mainGetOptionSync(key: kEmilliAccountAccess);
+    final value = (current == 'click' || current == 'off') ? current : 'direct';
+    final onChanged = locked
+        ? null
+        : (String v) async {
+            await bind.mainSetOption(
+                key: kEmilliAccountAccess, value: v == 'direct' ? '' : v);
+            setState(() {});
+          };
+    return _Card(title: 'emilli_access_title', children: [
+      _Radio<String>(context,
+          value: 'direct',
+          groupValue: value,
+          label: 'emilli_access_direct',
+          onChanged: onChanged),
+      _Radio<String>(context,
+          value: 'click',
+          groupValue: value,
+          label: 'emilli_access_click',
+          onChanged: onChanged),
+      _Radio<String>(context,
+          value: 'off',
+          groupValue: value,
+          label: 'emilli_access_off',
+          onChanged: onChanged),
+    ]);
   }
 
   Widget tfa() {
@@ -2294,9 +2328,21 @@ class _AccountState extends State<_Account> {
     return ListView(
       controller: scrollController,
       children: [
-        _Card(title: 'Account', children: [accountAction(), useInfo()]),
+        _Card(title: 'Account', children: [
+          accountAction(),
+          useInfo(),
+          releaseAction(),
+        ]),
       ],
     ).marginOnly(bottom: _kListViewBottomMargin);
+  }
+
+  // Emilli Remote: take this PC out of the signed-in account, so another account can sign in here.
+  Widget releaseAction() {
+    return Obx(() => Offstage(
+        offstage: gFFI.userModel.userName.value.isEmpty,
+        child: _Button('emilli_release_pc', () => emilliReleaseThisPc())
+            .marginOnly(top: 8)));
   }
 
   Widget accountAction() {
@@ -2624,17 +2670,11 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('ID')}: $myId')
                       .marginSymmetric(vertical: 4.0)),
+              // Emilli Remote: the source of this build (AGPL-3.0) instead of upstream's pages.
               InkWell(
                   onTap: () {
-                    launchUrlString('https://rustdesk.com/privacy.html');
-                  },
-                  child: Text(
-                    translate('Privacy Statement'),
-                    style: linkStyle,
-                  ).marginSymmetric(vertical: 4.0)),
-              InkWell(
-                  onTap: () {
-                    launchUrlString('https://rustdesk.com');
+                    launchUrlString(
+                        'https://github.com/LoomNaru-Labs/emilli-remote');
                   },
                   child: Text(
                     translate('Website'),

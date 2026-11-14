@@ -237,6 +237,8 @@ async fn start_hbbs_sync_async() {
                 v["id"] = json!(id);
                 v["uuid"] = json!(crate::encode64(hbb_common::get_uuid()));
                 v["ver"] = json!(hbb_common::get_version_number(crate::VERSION));
+                // Emilli Remote: this PC's switch for same-account connections (src/emilli.rs).
+                v["emilli_access"] = json!(crate::emilli::account_access().as_str());
                 if !conns.is_empty() {
                     v["conns"] = json!(conns);
                 }

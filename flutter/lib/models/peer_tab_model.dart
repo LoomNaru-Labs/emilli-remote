@@ -37,12 +37,15 @@ class PeerTabModel with ChangeNotifier {
     IconFont.addressBook,
     IconFont.deviceGroupFill,
   ];
+  // Emilli Remote: only "내 기기" (the account's devices from the account server). Recent
+  // sessions, favorites, the LAN list and the address book are off, so a device the account
+  // may not open is never offered as a card to click.
   List<bool> isEnabled = List.from([
+    false,
+    false,
+    false,
+    false,
     true,
-    true,
-    !isWeb && bind.mainGetLocalOption(key: "disable-discovery-panel") != "Y",
-    !(bind.isDisableAb() || bind.isDisableAccount()),
-    !(bind.isDisableGroupPanel() || bind.isDisableAccount()),
   ]);
   final List<bool> _isVisible = List.filled(maxTabCount, true, growable: false);
   List<bool> get isVisibleEnabled => () {

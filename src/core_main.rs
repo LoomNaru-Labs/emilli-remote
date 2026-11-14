@@ -43,6 +43,7 @@ fn finish_macos_update(result: hbb_common::ResultType<()>) -> Option<CoreMainAct
 /// If it returns [`Some`], the action determines whether to start the UI or report failure.
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn core_main() -> Option<CoreMainAction> {
+    crate::emilli::apply_instance_name();
     if !crate::common::global_init() {
         return None;
     }
@@ -264,7 +265,7 @@ pub fn core_main() -> Option<CoreMainAction> {
                     },
                 };
                 Toast::new(Toast::POWERSHELL_APP_ID)
-                    .title(&config::APP_NAME.read().unwrap())
+                    .title(crate::emilli::DISPLAY_NAME)
                     .text1(&translate(text))
                     .sound(Some(Sound::Default))
                     .duration(Duration::Short)
@@ -296,7 +297,7 @@ pub fn core_main() -> Option<CoreMainAction> {
                     }
                 };
                 Toast::new(Toast::POWERSHELL_APP_ID)
-                    .title(&config::APP_NAME.read().unwrap())
+                    .title(crate::emilli::DISPLAY_NAME)
                     .text1(&text)
                     .sound(Some(Sound::Default))
                     .duration(Duration::Short)

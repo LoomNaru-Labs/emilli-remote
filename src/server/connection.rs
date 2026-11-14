@@ -3016,6 +3016,41 @@ impl Connection {
                 self.try_start_cm_ipc();
             }
 
+            // Emilli Remote: a one-time ticket from the account server opens this PC for a PC of
+            // the same account (src/emilli.rs), as this PC's switch allows. Anything else, or a
+            // ticket the account server does not confirm, goes on to the usual checks below.
+            if !lr.emilli_ticket.is_empty() && !self.terminal {
+                let access = crate::emilli::account_access();
+                if access != crate::emilli::Access::Off {
+                    let challenge = self.hash.challenge.clone();
+                    if crate::emilli::check_ticket(&lr.emilli_ticket, &challenge, &lr.my_id)
+                        .await
+                        .is_some()
+                    {
+                        if access == crate::emilli::Access::Direct {
+                            if !self.send_logon_response_and_keep_alive().await {
+                                return false;
+                            }
+                            self.try_start_cm(
+                                lr.my_id.clone(),
+                                lr.my_name.clone(),
+                                self.authorized,
+                            );
+                            return true;
+                        }
+                        // Click: someone at this PC accepts, as for a click-only PC.
+                        self.try_start_cm(lr.my_id.clone(), lr.my_name.clone(), false);
+                        if hbb_common::get_version_number(&lr.version)
+                            >= hbb_common::get_version_number("1.2.0")
+                        {
+                            self.send_login_error(crate::client::LOGIN_MSG_NO_PASSWORD_ACCESS)
+                                .await;
+                        }
+                        return true;
+                    }
+                }
+            }
+
             // https://github.com/rustdesk/rustdesk-server-pro/discussions/646
             // `is_logon` is used to check login with `OPTION_ALLOW_LOGON_SCREEN_PASSWORD` == "Y".
             // `is_logon_ui()` is a fallback for logon UI detection on Windows.

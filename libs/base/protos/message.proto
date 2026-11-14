@@ -86,6 +86,8 @@ message LoginRequest {
   string avatar = 17;
   bytes trusted_device_v2_token = 18;
   bool trusted_device_v2_supported = 19;
+  // Emilli Remote: one-time ticket from the account server for a PC of the same account.
+  bytes emilli_ticket = 101;
 }
 
 message Terminal {

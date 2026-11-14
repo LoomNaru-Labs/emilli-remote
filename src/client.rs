@@ -1004,7 +1004,9 @@ impl Client {
                     Some(rendezvous_message::Union::PunchHoleResponse(ph)) => {
                         if ph.socket_addr.is_empty() {
                             if !ph.other_failure.is_empty() {
-                                bail!(ph.other_failure);
+                                bail!(crate::emilli::refusal_key(&ph.other_failure)
+                                    .map(|k| k.to_owned())
+                                    .unwrap_or(ph.other_failure));
                             }
                             match ph.failure.enum_value() {
                                 Ok(punch_hole_response::Failure::ID_NOT_EXIST) => {
@@ -1838,7 +1840,9 @@ impl Client {
             {
                 if let Some(rendezvous_message::Union::RelayResponse(rs)) = msg_in.union {
                     if !rs.refuse_reason.is_empty() {
-                        bail!(rs.refuse_reason);
+                        bail!(crate::emilli::refusal_key(&rs.refuse_reason)
+                            .map(|k| k.to_owned())
+                            .unwrap_or(rs.refuse_reason));
                     }
                     succeed = true;
                     break;
@@ -4762,9 +4766,17 @@ pub async fn handle_hash(
         return true;
     }
 
+    // Emilli Remote: a PC of the signed-in account opens with a one-time ticket from the account
+    // server instead of its own password. Without a ticket the usual password or click path follows.
+    let mut emilli_ticket: Option<Vec<u8>> = None;
+    if password.is_empty() && !request_approval {
+        let id = lc.read().unwrap().id.clone();
+        emilli_ticket = crate::emilli::fetch_ticket(&id, &hash.challenge).await;
+    }
+
     let password = if password.is_empty() {
         // login without password, the remote side can click accept
-        if !request_approval {
+        if !request_approval && emilli_ticket.is_none() {
             interface.msgbox("input-password", "Password Required", "", "");
         }
         Vec::new()
@@ -4774,6 +4786,26 @@ pub async fn handle_hash(
         hasher.update(&hash.challenge);
         hasher.finalize()[..].into()
     };
+
+    if let Some(ticket) = emilli_ticket {
+        let mut msg_out = lc
+            .read()
+            .unwrap()
+            .create_login_msg(String::new(), String::new(), password);
+        if let Some(message::Union::LoginRequest(lr)) = msg_out.union.as_mut() {
+            lr.emilli_ticket = ticket.into();
+        }
+        let sent = match trust.login(msg_out).await {
+            Ok(msg_out) => peer.send(&msg_out).await,
+            Err(err) => Err(err),
+        };
+        if let Err(error) = sent {
+            interface.on_error(&error.to_string());
+            return false;
+        }
+        lc.write().unwrap().hash = hash;
+        return true;
+    }
 
     if request_approval {
         interface.msgbox(
