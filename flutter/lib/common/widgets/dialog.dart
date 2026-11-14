@@ -3033,3 +3033,23 @@ Widget trustedDevicesTable(
         )),
   );
 }
+
+/// Emilli Remote (REMOTE-EASY-3E): the open-source notice, opened from About (and from the
+/// install page's licence link). The only text that names the work Emilli Remote is built on;
+/// its keys start with "emilli-oss-notice", which translate() leaves as written.
+void showOpenSourceNotice() {
+  gFFI.dialogManager.show((setState, close, context) {
+    return CustomAlertDialog(
+      title: Text(translate('emilli-oss-notice')),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480),
+        child: SingleChildScrollView(
+          child: SelectableText(translate('emilli-oss-notice-body')),
+        ),
+      ),
+      actions: [dialogButton('OK', onPressed: close)],
+      onSubmit: close,
+      onCancel: close,
+    );
+  });
+}

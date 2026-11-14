@@ -389,6 +389,39 @@ pub fn access_saved(value: &str) {
     *SAVED_ACCESS.lock().unwrap() = Some(value.to_owned());
 }
 
+// ---- The name people see (REMOTE-EASY-3E) ----
+//
+// Every text a person sees goes through `lang::translate`, which calls `without_base_name`: any
+// spelling of the base software's name ("RustDesk", "Rustdesk", "rust desk", ...), and its server
+// product's name, reads as DISPLAY_NAME. Web addresses are left whole (the only values with one
+// are the macOS and Linux help links, not shown on Windows). The open-source notice
+// (keys starting with OSS_NOTICE_KEY) is the one text that names the original work.
+
+pub const OSS_NOTICE_KEY: &str = "emilli-oss-notice";
+
+lazy_static::lazy_static! {
+    static ref BASE_NAME: hbb_common::regex::Regex =
+        hbb_common::regex::Regex::new(r"(?i)https?://\S+|rust[ _-]?desk(\s+server(\s+pro)?)?").unwrap();
+}
+
+pub fn without_base_name(text: &str, key: &str) -> String {
+    if key.starts_with(OSS_NOTICE_KEY) {
+        return text.to_owned();
+    }
+    BASE_NAME
+        .replace_all(text, |c: &hbb_common::regex::Captures| {
+            let m = &c[0];
+            if m.len() > 4 && m[..4].eq_ignore_ascii_case("http") {
+                m.to_owned()
+            } else if c.get(1).is_some() {
+                format!("{DISPLAY_NAME} Server")
+            } else {
+                DISPLAY_NAME.to_owned()
+            }
+        })
+        .into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -427,5 +460,22 @@ mod tests {
             Some("emilli_refused_login")
         );
         assert_eq!(refusal_key("ID does not exist"), None);
+    }
+
+    #[test]
+    fn no_spelling_of_the_base_name_reaches_a_person() {
+        let f = |s: &str| without_base_name(s, "k");
+        assert_eq!(f("About RustDesk"), "About Emilli Remote");
+        assert_eq!(f("Про Rustdesk"), "Про Emilli Remote");
+        assert_eq!(f("rustdesk, RUSTDESK, Rust Desk, rust-desk"), "Emilli Remote, Emilli Remote, Emilli Remote, Emilli Remote");
+        assert_eq!(f("RustDesk Server Pro를 {} 버전"), "Emilli Remote Server를 {} 버전");
+        assert_eq!(f("NOTE: RustDesk server OSS"), "NOTE: Emilli Remote Server OSS");
+        assert_eq!(f("RustDesk가 RustDesk를"), "Emilli Remote가 Emilli Remote를");
+        assert_eq!(
+            f("see https://rustdesk.com/docs/en/client/mac/#enable-permissions now"),
+            "see https://rustdesk.com/docs/en/client/mac/#enable-permissions now"
+        );
+        assert_eq!(f("Emilli Remote"), "Emilli Remote");
+        assert_eq!(without_base_name("RustDesk (AGPL-3.0)", "emilli-oss-notice-body"), "RustDesk (AGPL-3.0)");
     }
 }

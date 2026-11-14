@@ -869,5 +869,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("Too many attempts, try again later", "로그인 시도가 너무 많아 잠시 막혔습니다. 15분 뒤에 다시 해 주세요"),
         ("This account is disabled", "사용할 수 없는 계정입니다. Emilli 담당자에게 문의해 주세요"),
         ("Invalid token, please log in again", "로그인이 끝났습니다. 다시 로그인해 주세요"),
+        ("emilli-oss-notice", "오픈소스 고지"),
+        ("emilli-oss-notice-body", "Emilli Remote 는 RustDesk(https://github.com/rustdesk/rustdesk)를 바탕으로 만들었습니다.\nRustDesk: Copyright © Purslane Tech Pte. Ltd. 및 RustDesk 기여자들. GNU Affero General Public License 3판(AGPL-3.0)으로 배포됩니다.\n\nLoomNaru Labs Inc 는 Emilli Remote 를 같은 라이선스로 배포합니다. AGPL-3.0 의 조건에 따라 복사하고 고치고 다시 배포할 수 있습니다.\n\n이 프로그램은 법이 허용하는 범위에서 어떤 보증도 하지 않습니다. 자세한 내용은 라이선스에 있습니다.\n\n라이선스: 프로그램 폴더의 LICENCE.txt, 또는 https://www.gnu.org/licenses/agpl-3.0.html\n소스 코드: https://github.com/LoomNaru-Labs/emilli-remote"),
     ].iter().cloned().collect();
 }

@@ -142,7 +142,8 @@ class PlatformFFI {
         : isLinux
             ? _openLinuxCoreLib()
             : isWindows
-                ? DynamicLibrary.open('librustdesk.dll')
+                // Emilli Remote: the Windows core library's name (CMakeLists.txt).
+                ? DynamicLibrary.open('EmilliRemoteCore.dll')
                 :
                 // Use executable itself as the dynamic library for MacOS.
                 // Multiple dylib instances will cause some global instances to be invalid.

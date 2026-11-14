@@ -93,7 +93,7 @@ BEGIN
             VALUE "FileDescription", "Emilli Remote" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
             VALUE "InternalName", "EmilliRemote" "\0"
-            VALUE "LegalCopyright", "Copyright © 2026 Purslane Tech Pte. Ltd. and LoomNaru Labs Inc. AGPL-3.0." "\0"
+            VALUE "LegalCopyright", "Copyright © 2026 LoomNaru Labs Inc. Open source, AGPL-3.0 (About, Open-source notice)." "\0"
             VALUE "OriginalFilename", "EmilliRemote.exe" "\0"
             VALUE "ProductName", "Emilli Remote" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"

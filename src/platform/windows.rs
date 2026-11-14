@@ -1521,10 +1521,17 @@ pub fn copy_raw_cmd(src_raw: &str, _raw: &str, _path: &str) -> ResultType<String
 
 pub fn copy_exe_cmd(src_exe: &str, exe: &str, path: &str) -> ResultType<String> {
     let main_exe = copy_raw_cmd(src_exe, exe, path)?;
+    // Emilli Remote (REMOTE-EASY-3E): files of 1.5.3 and older under the base software's name
+    // (the core library, the privacy-mode helper, the printer driver no longer shipped).
     Ok(format!(
         "
         {main_exe}
         copy /Y \"{ORIGIN_PROCESS_EXE}\" \"{path}\\{broker_exe}\"
+        taskkill /F /IM RuntimeBroker_rustdesk.exe
+        if exist \"{path}\\RuntimeBroker_rustdesk.exe\" del /f /q \"{path}\\RuntimeBroker_rustdesk.exe\"
+        if exist \"{path}\\librustdesk.dll\" del /f /q \"{path}\\librustdesk.dll\"
+        if exist \"{path}\\drivers\\RustDeskPrinterDriver\" rmdir /s /q \"{path}\\drivers\\RustDeskPrinterDriver\"
+        if exist \"{path}\\printer_driver_adapter.dll\" del /f /q \"{path}\\printer_driver_adapter.dll\"
         ",
         ORIGIN_PROCESS_EXE = win_topmost_window::ORIGIN_PROCESS_EXE,
         broker_exe = win_topmost_window::INJECTED_PROCESS_EXE,
@@ -4208,7 +4215,8 @@ pub fn message_box(text: &str) {
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<u16>>();
-    let caption = "RustDesk Output"
+    // Emilli Remote (REMOTE-EASY-3E): the caption a person sees.
+    let caption = crate::emilli::DISPLAY_NAME
         .encode_utf16()
         .chain(std::iter::once(0))
         .collect::<Vec<u16>>();

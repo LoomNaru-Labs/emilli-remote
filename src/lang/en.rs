@@ -332,5 +332,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_refused_not_allowed", "This number is not a PC of your account, so it cannot be opened. Only the PCs under 'My devices' open directly. To use this PC, ask its account owner or your administrator for access."),
         ("emilli_refused_login", "Please sign in to Emilli Remote first: press 'Sign in' on the first screen."),
         ("emilli_refused_unreachable", "The account server could not be reached. Please try again in a moment."),
+        ("emilli-oss-notice", "Open-source notice"),
+        ("emilli-oss-notice-body", "Emilli Remote is built on RustDesk (https://github.com/rustdesk/rustdesk).\nRustDesk: Copyright © Purslane Tech Pte. Ltd. and the RustDesk contributors, licensed under the GNU Affero General Public License, version 3 (AGPL-3.0).\n\nLoomNaru Labs Inc distributes Emilli Remote under the same licence. You may copy, change and pass it on under the terms of the AGPL-3.0.\n\nThis program comes with no warranty, to the extent permitted by law. See the licence for details.\n\nLicence: LICENCE.txt in the program folder, or https://www.gnu.org/licenses/agpl-3.0.html\nSource code: https://github.com/LoomNaru-Labs/emilli-remote"),
     ].iter().cloned().collect();
 }

@@ -30,10 +30,12 @@ use winapi::{
 pub(super) const PRIVACY_MODE_IMPL: &str = "privacy_mode_impl_mag";
 
 pub const ORIGIN_PROCESS_EXE: &'static str = "C:\\Windows\\System32\\RuntimeBroker.exe";
-pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_rustdesk.exe";
+// Emilli Remote (REMOTE-EASY-3E): was "RuntimeBroker_rustdesk.exe"; install removes that file.
+pub const WIN_TOPMOST_INJECTED_PROCESS_EXE: &'static str = "RuntimeBroker_emilli.exe";
 pub const INJECTED_PROCESS_EXE: &'static str = WIN_TOPMOST_INJECTED_PROCESS_EXE;
-pub(super) const PRIVACY_WINDOW_CLASS: &'static str = "RustDeskPrivacyWindowClass";
-pub(super) const PRIVACY_WINDOW_NAME: &'static str = "RustDeskPrivacyWindow";
+pub(super) const PRIVACY_WINDOW_CLASS: &'static str = "EmilliPrivacyWindowClass";
+// Emilli Remote (REMOTE-EASY-3E): the title the CI build gives the helper's window (was RustDeskPrivacyWindow).
+pub(super) const PRIVACY_WINDOW_NAME: &'static str = "EmilliPrivacyWindow";
 const PRIVACY_WINDOW_WAIT_MILLIS: u128 = 1_000;
 const PRIVACY_WINDOW_WAIT_EXTRA_MONITOR_MILLIS: u128 = 500;
 const PRIVACY_WINDOW_POLL_INTERVAL_MILLIS: u64 = 100;

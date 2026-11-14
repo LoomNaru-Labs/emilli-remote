@@ -79,10 +79,8 @@ class DesktopSettingPage extends StatefulWidget {
       SettingsTabKey.network,
     if (!bind.isIncomingOnly()) SettingsTabKey.display,
     if (!bind.isDisableAccount()) SettingsTabKey.account,
-    if (isWindows &&
-        !bind.isDisableSettings() &&
-        bind.mainGetBuildinOption(key: kOptionHideRemotePrinterSetting) != 'Y')
-      SettingsTabKey.printer,
+    // Emilli Remote (REMOTE-EASY-3E): no Printer page. The remote printer's driver is the base
+    // software's signed driver under its own name, so it is not shipped.
     SettingsTabKey.about,
   ];
 
@@ -2670,43 +2668,18 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('ID')}: $myId')
                       .marginSymmetric(vertical: 4.0)),
-              // Emilli Remote: the source of this build (AGPL-3.0) instead of upstream's pages.
+              // Emilli Remote (REMOTE-EASY-3E): the licence's notices (original work, copyright,
+              // no warranty, licence, source) on their own page, the one place that names the
+              // original work.
               InkWell(
-                  onTap: () {
-                    launchUrlString(
-                        'https://github.com/LoomNaru-Labs/emilli-remote');
-                  },
+                  onTap: showOpenSourceNotice,
                   child: Text(
-                    translate('Website'),
+                    translate('emilli-oss-notice'),
                     style: linkStyle,
                   ).marginSymmetric(vertical: 4.0)),
-              Container(
-                decoration: const BoxDecoration(color: Color(0xFF2c8cff)),
-                padding:
-                    const EdgeInsets.symmetric(vertical: 24, horizontal: 8),
-                child: SelectionArea(
-                    child: Row(
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Copyright © ${DateTime.now().toString().substring(0, 4)} Purslane Tech Pte. Ltd.\n$license',
-                            style: const TextStyle(color: Colors.white),
-                          ),
-                          Text(
-                            translate('Slogan_tip'),
-                            style: TextStyle(
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white),
-                          )
-                        ],
-                      ),
-                    ),
-                  ],
-                )),
-              ).marginSymmetric(vertical: 4.0)
+              if (license.isNotEmpty)
+                SelectionArea(
+                    child: Text(license).marginSymmetric(vertical: 4.0)),
             ],
           ).marginOnly(left: _kContentHMargin)
         ]),

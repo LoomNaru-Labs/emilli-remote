@@ -27,10 +27,11 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   if (auto result = service_control::HandleCommand(command_line)) {
     return static_cast<int>(*result);
   }
-  HINSTANCE hInstance = LoadLibraryA("librustdesk.dll");
+  // Emilli Remote (REMOTE-EASY-3E): the core library is EmilliRemoteCore.dll (CMakeLists.txt).
+  HINSTANCE hInstance = LoadLibraryA("EmilliRemoteCore.dll");
   if (!hInstance)
   {
-    std::cout << "Failed to load librustdesk.dll." << std::endl;
+    std::cout << "Failed to load EmilliRemoteCore.dll." << std::endl;
     return EXIT_FAILURE;
   }
   FUNC_RUSTDESK_CORE_MAIN rustdesk_core_main =
