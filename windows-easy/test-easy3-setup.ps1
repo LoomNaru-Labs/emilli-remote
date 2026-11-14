@@ -89,8 +89,9 @@ $p = Start-Process -FilePath $Setup -PassThru -ArgumentList @('/VERYSILENT', '/S
 $p.WaitForExit(600000) | Out-Null
 Check 'Setup ended with exit code 0' ($p.ExitCode -eq 0) "exit $($p.ExitCode) after $([int]((Get-Date) - $t0).TotalSeconds) s"
 Get-Content "$Work\setup.log" | Select-String 'Emilli:' | ForEach-Object { Write-Host "  $($_.Line -replace '^.*Emilli: ', 'setup: ')" }
-# Diagnostics: what of the program is running, and its own logs.
-Get-CimInstance Win32_Process | Where-Object { $_.Name -match '(?i)emilli|rust' } | ForEach-Object {
+# Diagnostics: every process started since Setup began (the program's installer and what it ran),
+# and the program's own logs.
+Get-CimInstance Win32_Process | Where-Object { $_.CreationDate -ge $t0 -or $_.Name -match '(?i)emilli|rust' } | ForEach-Object {
     Write-Host "  running: $($_.Name) pid $($_.ProcessId) parent $($_.ParentProcessId): $(($_.CommandLine -replace '--password\s+\S+', '--password (hidden)'))"
 }
 foreach ($d in @("$env:APPDATA\EmilliRemote\log", 'C:\Windows\ServiceProfiles\LocalService\AppData\Roaming\EmilliRemote\log', 'C:\Windows\System32\config\systemprofile\AppData\Roaming\EmilliRemote\log')) {
