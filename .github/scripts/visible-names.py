@@ -36,6 +36,8 @@ ALLOWED = [
     ("src/virtual_display_manager.rs", r"^RustDeskIddDriver Device", "device of a virtual display driver this build does not ship"),
     ("src/platform/windows.rs", r"RuntimeBroker_rustdesk\.exe|librustdesk\.dll|RustDeskPrinterDriver", "removes the files of 1.5.3 and older on upgrade"),
     ("src/platform/windows", r"%RUSTDESK_\w+%|RUSTDESK_\w+=", "variable inside an install script (internal)"),
+    ("src/common.rs", r"^RustDesk$", "comparison with the upstream app name (is_rustdesk, is_custom_client)"),
+    ("src/platform/windows.rs", r"^RustDesk$", "staging folder for updates of custom clients (updates are off; install does not create it, checked on the runner)"),
     ("src/whiteboard/linux.rs", r"^RustDesk whiteboard$", "Linux only"),
     ("src/whiteboard/macos.rs", r"^RustDesk whiteboard$", "macOS only"),
 ]
