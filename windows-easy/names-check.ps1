@@ -106,18 +106,21 @@ function Read-Picture([string] $png, [int] $offX = 0, [int] $offY = 0) {
     Scale-Twice $png $big
     $ErrorActionPreference = 'Continue'
     & $Tesseract $big $base -l 'eng+kor' --psm 3 txt tsv 2>&1 | Out-Null
+    & $Tesseract $big "$base.sparse" -l 'eng+kor' --psm 11 txt tsv 2>&1 | Out-Null
     $ErrorActionPreference = 'Stop'
     Remove-Item -Force $big -ErrorAction SilentlyContinue
     $words = @()
-    if (Test-Path "$base.tsv") {
-        $words = @(Get-Content "$base.tsv" -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object {
+    foreach ($tsv in @("$base.tsv", "$base.sparse.tsv")) {
+        if (-not (Test-Path $tsv)) { continue }
+        $words += @(Get-Content $tsv -Encoding UTF8 | Select-Object -Skip 1 | ForEach-Object {
             $c = $_ -split "`t"
             if ($c.Count -ge 12 -and $c[0] -eq '5' -and $c[11].Trim()) {
                 [pscustomobject]@{ X = $offX + [int]([int]$c[6] / 2); Y = $offY + [int]([int]$c[7] / 2); W = [int]([int]$c[8] / 2); H = [int]([int]$c[9] / 2); Text = $c[11].Trim() }
             }
         })
     }
-    $text = if (Test-Path "$base.txt") { Get-Content -Raw "$base.txt" -Encoding UTF8 } else { '' }
+    $text = ''
+    foreach ($t in @("$base.txt", "$base.sparse.txt")) { if (Test-Path $t) { $text += "`n" + (Get-Content -Raw $t -Encoding UTF8) } }
     foreach ($l in ($text -split "`r?`n")) {
         if ($l -match $BadOcr) {
             if ($name -match 'notice') { Add-Line 'ALLOWED' 'page text (OCR)' "$name.png" $l } else { Found 'page text (OCR)' "$name.png" $l }
@@ -216,12 +219,35 @@ function Shot-Scrolled([IntPtr] $h, [string] $name, [int] $px, [int] $py) {
 $W_CANCEL = K 0xCDE8, 0xC18C
 $W_OK = K 0xD655, 0xC778
 function Close-InWindowDialog([IntPtr] $h, $shot, [switch] $Ok) {
-    $b = $shot.Words | Where-Object { $_.Text -match "^(Cancel|$W_CANCEL)$" } | Select-Object -Last 1
-    if (-not $b -and $Ok) { $b = $shot.Words | Where-Object { $_.Text -match "^(OK|$W_OK)$" } | Select-Object -Last 1 }
-    if ($b) { Click-At ($b.X + [int]($b.W / 2)) ($b.Y + [int]($b.H / 2)) }
-    else { [SL]::Front($h); Start-Sleep -Milliseconds 300; [SL]::PressKey(0x1B) }
+    $how = ''
+    $b = $shot.Words | Where-Object { $_.Text -match "^(Cancel|$W_CANCEL)" } | Select-Object -Last 1
+    if ($Ok) { $b = $shot.Words | Where-Object { $_.Text -match "^(OK|$W_OK)" } | Select-Object -Last 1 }
+    if ($b) { Click-At ($b.X + [int]($b.W / 2)) ($b.Y + [int]($b.H / 2)); $how = "its '$($b.Text)' button" }
+    else {
+        # The app's dialogs end with a filled blue OK button, Cancel just left of it.
+        $c = [SL]::Clip($h)
+        $blue = @([SL]::Clusters($c[0] + 740, $c[1] + 120, $c[2] - 760, $c[3] - 140, 'blue', 12) | Where-Object {
+            $w = $_[2] - $_[0]; $hh = $_[3] - $_[1]; $w -ge 30 -and $w -le 160 -and $hh -ge 18 -and $hh -le 60 -and $_[4] -ge (0.5 * $w * $hh)
+        } | Sort-Object { $_[3] } | Select-Object -Last 1)
+        if ($blue.Count -gt 0) {
+            $q = $blue[0]; $cy = [int](($q[1] + $q[3]) / 2)
+            if ($Ok) { Click-At ([int](($q[0] + $q[2]) / 2)) $cy; $how = "the blue OK button at $($q[0]),$($q[1])" }
+            else { Click-At ($q[0] - 51) $cy; $how = "Cancel, left of the blue OK button at $($q[0]),$($q[1])" }
+        } else { [SL]::Front($h); Start-Sleep -Milliseconds 300; [SL]::PressKey(0x1B); $how = 'Escape' }
+    }
     Start-Sleep -Seconds 1
-    Write-Host "  dialog closed by $(if ($b) { "its '$($b.Text)' button" } else { 'Escape' })"
+    Write-Host "  dialog closed by $how"
+}
+# Waits until the window's picture differs from the one taken before a click (a dialog opened).
+function Wait-Change([IntPtr] $h, [string] $before, [int] $seconds = 8) {
+    $tmp = Join-Path $env:TEMP 'names-wait.png'
+    $end = (Get-Date).AddSeconds($seconds)
+    while ((Get-Date) -lt $end) {
+        Start-Sleep -Milliseconds 700
+        [void][SL]::ShotWindow($h, $tmp)
+        if (-not (Same-Picture $before $tmp)) { Start-Sleep -Milliseconds 800; return $true }
+    }
+    return $false
 }
 
 # The words a picture of the settings page shows in its left column (the list of pages).
@@ -286,6 +312,7 @@ function Scan-Files-Text([string] $dir, [string] $tag) {
             foreach ($h in $hits) {
                 if ($isNotice) { Add-Line 'ALLOWED' 'file text' $f.FullName $h }
                 elseif ($f.Extension -eq '.log') { Add-Line 'HIDDEN' 'log text' $f.FullName $h }
+                elseif ($f.Extension -eq '.toml') { Add-Line 'HIDDEN' 'settings file' $f.FullName $h }
                 else { Found 'file text' $f.FullName $h }
             }
         } else {
@@ -554,8 +581,10 @@ function Visit-Pages([string] $lang) {
                         Write-Host "  network rows at: $(($script:NetRows | ForEach-Object { "$($_[0]) $($_[1])" }) -join '; ')"
                     }
                     foreach ($row in $script:NetRows) {
+                        $ref = Join-Path $env:TEMP 'names-ref.png'
+                        [void][SL]::ShotWindow($main.Hwnd, $ref)
                         Click-At ($f[0] + 320) ($f[1] + $row[1])
-                        Start-Sleep -Seconds 2
+                        if (-not (Wait-Change $main.Hwnd $ref)) { Write-Host "  $($row[0]) dialog: nothing opened" }
                         $d = Shot-Window $main.Hwnd "$name-$($row[0])-dialog"
                         Shot-Dialogs "$name-$($row[0])" $main.Hwnd
                         Close-InWindowDialog $main.Hwnd $d
@@ -570,11 +599,13 @@ function Visit-Pages([string] $lang) {
                 if ($o) { $script:NoticePoint = @(($o.X + [int]($o.W / 2)), ($o.Y + [int]($o.H / 2))) }
             }
             if ($script:NoticePoint) {
+                $ref = Join-Path $env:TEMP 'names-ref.png'
+                [void][SL]::ShotWindow($main.Hwnd, $ref)
                 Click-At $script:NoticePoint[0] $script:NoticePoint[1]
-                Start-Sleep -Seconds 2
+                if (-not (Wait-Change $main.Hwnd $ref)) { Problem "$lang : the open-source notice did not open" }
                 $d = Shot-Window $main.Hwnd "$name-notice"
                 Close-InWindowDialog $main.Hwnd $d -Ok
-            } else { Write-Host "  About: no open-source notice link on this build" }
+            } else { Write-Host "  About: no open-source notice link on this build"; if ($Mode -eq "check") { Problem "$lang : no open-source notice link on About" } }
         }
     }
     Shot-Dialogs "$lang-90-after-pages" $main.Hwnd
