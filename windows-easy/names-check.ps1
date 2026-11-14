@@ -226,9 +226,18 @@ function Close-InWindowDialog([IntPtr] $h, $shot, [switch] $Ok) {
     else {
         # The app's dialogs end with a filled blue OK button, Cancel just left of it.
         $c = [SL]::Clip($h)
-        $blue = @([SL]::Clusters($c[0] + 740, $c[1] + 120, $c[2] - 760, $c[3] - 140, 'blue', 12) | Where-Object {
-            $w = $_[2] - $_[0]; $hh = $_[3] - $_[1]; $w -ge 30 -and $w -le 160 -and $hh -ge 18 -and $hh -le 60 -and $_[4] -ge (0.5 * $w * $hh)
-        } | Sort-Object { $_[3] } | Select-Object -Last 1)
+        # A focused field's blue border can share the button's columns: each column group is cut
+        # into runs of rows that are mostly blue; a button is one such run, 18 to 60 rows high.
+        $cands = @()
+        foreach ($g in @([SL]::Clusters($c[0] + 740, $c[1] + 120, $c[2] - 760, $c[3] - 140, 'blue', 12))) {
+            $w = $g[2] - $g[0] + 1
+            if ($w -lt 30 -or $w -gt 160) { continue }
+            foreach ($band in @([SL]::Bands($g[0], $g[1], $w, ($g[3] - $g[1] + 1), 'blue', [int](0.6 * $w)))) {
+                $hh = $band[1] - $band[0] + 1
+                if ($hh -ge 18 -and $hh -le 60) { $cands += , @($g[0], $band[0], $g[2], $band[1]) }
+            }
+        }
+        $blue = @($cands | Sort-Object { $_[3] } | Select-Object -Last 1)
         if ($blue.Count -gt 0) {
             $q = $blue[0]; $cy = [int](($q[1] + $q[3]) / 2)
             if ($Ok) { Click-At ([int](($q[0] + $q[2]) / 2)) $cy; $how = "the blue OK button at $($q[0]),$($q[1])" }
