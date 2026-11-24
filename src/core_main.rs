@@ -237,9 +237,8 @@ pub fn core_main() -> Option<CoreMainAction> {
         {
             use crate::platform;
             if args[0] == "--uninstall" {
-                if let Err(err) = platform::uninstall_me(true) {
-                    log::error!("Failed to uninstall: {}", err);
-                }
+                // Emilli Remote (REMOTE-EASY-4): keep this PC's settings or remove everything.
+                crate::emilli_removal::uninstall(&args[1..]);
                 return None;
             } else if args[0] == "--update" {
                 // The elevated updater cannot delete its running verified copy.

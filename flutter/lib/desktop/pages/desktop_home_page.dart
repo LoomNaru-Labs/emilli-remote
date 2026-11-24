@@ -23,6 +23,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:window_manager/window_manager.dart';
 import 'package:window_size/window_size.dart' as window_size;
 import '../widgets/button.dart';
+import '../../common/widgets/emilli_update.dart';
 
 class DesktopHomePage extends StatefulWidget {
   const DesktopHomePage({Key? key}) : super(key: key);
@@ -47,6 +48,8 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   var watchIsInputMonitoring = false;
   var watchIsCanRecordAudio = false;
   Timer? _updateTimer;
+  Timer? _emilliUpdateTimer;
+  Map<String, dynamic> _emilliUpdate = {};
   bool isCardClosed = false;
 
   final RxBool _editHover = false.obs;
@@ -432,6 +435,11 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     if (systemError.isNotEmpty) {
       return buildInstallCard("", systemError, "", () {});
     }
+    // Emilli Remote (REMOTE-EASY-4): a newer version from Emilli's own host, with one button.
+    final emilliCard = _emilliUpdateCard();
+    if (emilliCard != null) {
+      return emilliCard;
+    }
 
     if (isWindows && !bind.isDisableInstallation()) {
       if (!bind.mainIsInstalled()) {
@@ -548,6 +556,21 @@ class _DesktopHomePageState extends State<DesktopHomePage>
       ).marginAll(14);
     }
     return Container();
+  }
+
+  Widget? _emilliUpdateCard() {
+    final s = _emilliUpdate;
+    final busy = (s['busy'] ?? '').toString();
+    final working = busy == 'downloading' || busy == 'installing';
+    if (!(working || (s['status'] == 'available' && busy.isEmpty))) {
+      return null;
+    }
+    return buildInstallCard(
+        '', emilliUpdateStatusText(s), working ? '' : 'emilli_update_button',
+        () async {
+      final r = await emilliUpdate('install');
+      if (mounted) setState(() => _emilliUpdate = r);
+    });
   }
 
   Widget buildInstallCard(String title, String content, String btnText,
@@ -674,6 +697,16 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   @override
   void initState() {
     super.initState();
+    if (isWindows) {
+      _emilliUpdateTimer =
+          periodic_immediate(const Duration(seconds: 20), () async {
+        final s = await emilliUpdate('state');
+        if (mounted && jsonEncode(s) != jsonEncode(_emilliUpdate)) {
+          setState(() => _emilliUpdate = s);
+        }
+      });
+      Future.delayed(const Duration(seconds: 3), emilliShowUpdateResult);
+    }
     _updateTimer = periodic_immediate(const Duration(seconds: 1), () async {
       await gFFI.serverModel.fetchID();
       final error = await bind.mainGetError();
@@ -850,6 +883,7 @@ class _DesktopHomePageState extends State<DesktopHomePage>
     _uniLinksSubscription?.cancel();
     Get.delete<RxBool>(tag: 'stop-service');
     _updateTimer?.cancel();
+    _emilliUpdateTimer?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

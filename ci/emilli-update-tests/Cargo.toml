@@ -1,0 +1,18 @@
+# REMOTE-EASY-4: the program's signed version-file checks (src/emilli_update/verify.rs), compiled
+# on their own with the same crates the program uses, so CI runs their tests in minutes.
+[package]
+name = "emilli-update-tests"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+base64 = "0.22"
+serde_json = "1.0"
+sha2 = "0.10"
+sodiumoxide = "0.2"

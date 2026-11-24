@@ -1223,6 +1223,18 @@ pub fn main_emilli_release_this_pc(token: String) -> String {
     crate::emilli::release_this_pc(token)
 }
 
+/// Emilli Remote (REMOTE-EASY-4): updates. `request` is {"op": "state" | "check" | "install" |
+/// "ack"}; the answer is the updater's state as JSON (see emilli_update.rs).
+pub fn main_emilli_update(request: String) -> String {
+    #[cfg(windows)]
+    return crate::emilli_update::ask_service(request);
+    #[cfg(not(windows))]
+    {
+        let _ = request;
+        return String::new();
+    }
+}
+
 pub fn main_deploy_device(token: String, id: String) -> String {
     #[cfg(target_os = "android")]
     {

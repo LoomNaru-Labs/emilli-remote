@@ -382,6 +382,8 @@ pub enum Data {
     Options(Option<HashMap<String, String>>),
     NatType(Option<i32>),
     ConfirmedKey(Option<(Vec<u8>, Vec<u8>)>),
+    /// Emilli Remote updates (REMOTE-EASY-4): the app's request and the updater's state, as JSON.
+    EmilliUpdate(String),
     RawMessage(Vec<u8>),
     Socks(Option<config::Socks5Server>),
     FS(FS),
@@ -920,6 +922,16 @@ async fn handle(data: Data, stream: &mut Connection) {
                 None
             };
             allow_err!(stream.send(&Data::ConfirmedKey(out)).await);
+        }
+        Data::EmilliUpdate(request) => {
+            #[cfg(windows)]
+            let answer = crate::emilli_update::handle_ipc(&request);
+            #[cfg(not(windows))]
+            let answer = {
+                let _ = request;
+                String::new()
+            };
+            allow_err!(stream.send(&Data::EmilliUpdate(answer)).await);
         }
         Data::Socks(s) => match s {
             None => {

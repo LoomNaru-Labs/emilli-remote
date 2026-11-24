@@ -1193,7 +1193,18 @@ impl Config {
             );
         }
 
-        #[cfg(not(any(target_os = "android", target_os = "ios")))]
+        // Emilli Remote (REMOTE-EASY-4): a random number on Windows, not one made from the network
+        // card, so a PC whose settings were removed ("remove everything") comes back as a new PC.
+        #[cfg(windows)]
+        {
+            return Some(
+                rand::thread_rng()
+                    .gen_range(100_000_000..1_000_000_000)
+                    .to_string(),
+            );
+        }
+
+        #[cfg(not(any(target_os = "android", target_os = "ios", windows)))]
         {
             let mut id = 0u32;
             if let Ok(Some(ma)) = mac_address::get_mac_address() {

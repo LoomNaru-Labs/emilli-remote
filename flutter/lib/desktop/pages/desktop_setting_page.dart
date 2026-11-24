@@ -29,6 +29,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../common/widgets/dialog.dart';
 import '../../common/widgets/login.dart';
 import '../../common/widgets/emilli_account.dart';
+import '../../common/widgets/emilli_update.dart';
 
 const double _kTabWidth = 200;
 const double _kTabHeight = 42;
@@ -524,8 +525,6 @@ class _GeneralState extends State<_General> {
   Widget other() {
     final incomingOnly = bind.isIncomingOnly();
     final outgoingOnly = bind.isOutgoingOnly();
-    final showAutoUpdate = (isWindows && bind.mainIsInstalled()) ||
-    (isMacOS && bind.mainIsInstalled() && bind.mainIsInstalledDaemon(prompt: false) && !bind.isCustomClient());
     final children = <Widget>[
       if (!isWeb && !incomingOnly)
         _OptionCheckBox(context, 'Confirm before closing multiple tabs',
@@ -593,20 +592,8 @@ class _GeneralState extends State<_General> {
             ),
           ),
       ],
-      if (!isWeb && !bind.isCustomClient())
-        _OptionCheckBox(
-          context,
-          'Check for software update on startup',
-          kOptionEnableCheckUpdate,
-          isServer: false,
-        ),
-      if (showAutoUpdate)
-        _OptionCheckBox(
-          context,
-          'Auto update',
-          kOptionAllowAutoUpdate,
-          isServer: true,
-        ),
+      // Emilli Remote (REMOTE-EASY-4): the base software's two update switches are not shown (its
+      // update check is off in this build); Emilli's updates are in About.
       if (isWindows && !outgoingOnly)
         _OptionCheckBox(
           context,
@@ -2667,6 +2654,8 @@ class _AboutState extends State<_About> {
               SelectionArea(
                   child: Text('${translate('ID')}: $myId')
                       .marginSymmetric(vertical: 4.0)),
+              // Emilli Remote (REMOTE-EASY-4): check, the one press and the automatic switch.
+              if (isWindows) const EmilliUpdateSection(),
               // Emilli Remote (REMOTE-EASY-3E): the licence's notices (original work, copyright,
               // no warranty, licence, source) on their own page, the one place that names the
               // original work.

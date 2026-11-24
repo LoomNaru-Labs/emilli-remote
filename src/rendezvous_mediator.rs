@@ -317,10 +317,10 @@ impl RendezvousMediator {
             }
         }
         crate::hbbs_http::sync::start();
+        // Emilli Remote (REMOTE-EASY-4): our own updater (emilli_update.rs) instead of the base
+        // software's, which stays switched off.
         #[cfg(target_os = "windows")]
-        if crate::platform::is_installed() && crate::is_server() {
-            crate::updater::start_auto_update();
-        }
+        crate::emilli_update::start_service_side();
         check_zombie();
         let server = new_server();
         if config::option2bool("stop-service", &Config::get_option("stop-service")) {

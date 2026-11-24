@@ -232,7 +232,16 @@ pub fn sign_detached(sk: &[u8], message: &[u8]) -> Option<Vec<u8>> {
 
 /// A nonce from the account server for this PC and purpose, signed with this PC's own key.
 pub async fn device_proof(id: &str, purpose: &str, extra: &str) -> Option<serde_json::Value> {
-    let api = api_server();
+    device_proof_at(&api_server(), id, purpose, extra).await
+}
+
+/// The same, at a given account server (the removal reads it from the service's settings).
+pub async fn device_proof_at(
+    api: &str,
+    id: &str,
+    purpose: &str,
+    extra: &str,
+) -> Option<serde_json::Value> {
     if api.is_empty() || id.is_empty() {
         return None;
     }
@@ -361,6 +370,42 @@ async fn release_this_pc_(token: String, id: String, uuid: String) -> String {
             RELEASE_UNREACHABLE.to_owned()
         }
     }
+}
+
+/// "Remove everything" (REMOTE-EASY-4): this PC leaves every account, proven by its own key; no
+/// sign-in needed. Some(true) when it was in an account, Some(false) when not, None when the
+/// account server did not answer within 20 s, refused, or is older than rd-api 1.4.4.
+#[tokio::main(flavor = "current_thread")]
+pub async fn forget_this_pc(api: String, id: String) -> Option<bool> {
+    let uuid = crate::encode64(hbb_common::get_uuid());
+    let work = async {
+        let proof = device_proof_at(&api, &id, "forget", "").await?;
+        let body = json!({ "id": id, "uuid": uuid, "proof": proof }).to_string();
+        match crate::post_request_with_status(format!("{}/api/emilli/forget", api), body, "")
+            .await
+        {
+            Ok((200, text)) => {
+                log::info!("forget: {}", short(&text));
+                Some(
+                    serde_json::from_str::<serde_json::Value>(&text)
+                        .ok()
+                        .and_then(|v| v.get("removed").and_then(|r| r.as_bool()))
+                        .unwrap_or(false),
+                )
+            }
+            Ok((status, text)) => {
+                log::warn!("forget refused: {} {}", status, short(&text));
+                None
+            }
+            Err(err) => {
+                log::warn!("forget request failed: {}", err);
+                None
+            }
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(20), work)
+        .await
+        .unwrap_or(None)
 }
 
 lazy_static::lazy_static! {

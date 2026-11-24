@@ -1,3 +1,13 @@
+# REMOTE-EASY-4: version 1.5.5; updates from our own download host (src/emilli_update.rs) and a
+# removal that asks "keep this PC's settings, or remove everything" (src/emilli_removal.rs).
+# Each run builds one or more flavours (job "plan"):
+#   push to easy4-windows: three TEST builds, 1.5.5, 1.5.6 and 1.5.7, of the same code, that take
+#     updates only from http://127.0.0.1:21180/update/ and trust only the test key (its private half
+#     comes from a public seed, see src/emilli_update/verify.rs), for the end-to-end test;
+#   workflow_dispatch: the versions, update folder and public key given (the release: 1.5.5,
+#     https://rd.emillis.net/update/, the release key's public half from the lead).
+# The update folder and key are compiled in (EMILLI_UPDATE_URL, EMILLI_UPDATE_KEY); a build
+# without them has no updater. Job "update-checks" tests the signed version file's checks.
 # REMOTE-EASY-3E: version 1.5.4; no text, file or folder of the program names the base software
 # (only About > Open-source notice and LICENCE.txt do, as the licence asks); see
 # .github/scripts/visible-names.py and the names job of the Setup workflow (branch easy3-setup).
@@ -13,8 +23,21 @@ name: Build Windows app (Emilli)
 
 on:
   workflow_dispatch:
+    inputs:
+      versions:
+        description: "Versions to build, comma-separated (the code's own version is 1.5.5)"
+        default: "1.5.5"
+      update_url:
+        description: "Update folder compiled in (https://..., ending in /); empty: no updater"
+        default: "https://rd.emillis.net/update/"
+      update_key:
+        description: "Public half of the release key (base64, 32 bytes); empty: no updater"
+        default: ""
+      flavour:
+        description: "Artifact name suffix: unsigned (release) or test"
+        default: "unsigned"
   push:
-    branches: [windows-153, windows-153-ui, easy3-windows]
+    branches: [windows-153, windows-153-ui, easy3-windows, easy4-windows]
     paths-ignore:
       - "NOTICE"
       - ".github/README.md"
@@ -27,7 +50,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  VERSION: "1.5.4"
+  VERSION: "1.5.5"
+  # The test builds' update folder and key (see the header).
+  TEST_UPDATE_URL: "http://127.0.0.1:21180/update/"
+  TEST_UPDATE_KEY: "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU="
   RUST_VERSION: "1.75"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
@@ -40,6 +66,72 @@ env:
   RETENTION_DAYS: 30
 
 jobs:
+  plan:
+    name: What to build
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      url: ${{ steps.plan.outputs.url }}
+      key: ${{ steps.plan.outputs.key }}
+      flavour: ${{ steps.plan.outputs.flavour }}
+    steps:
+      - id: plan
+        env:
+          IN_VERSIONS: ${{ github.event.inputs.versions }}
+          IN_URL: ${{ github.event.inputs.update_url }}
+          IN_KEY: ${{ github.event.inputs.update_key }}
+          IN_FLAVOUR: ${{ github.event.inputs.flavour }}
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            versions="$IN_VERSIONS"; url="$IN_URL"; key="$IN_KEY"; flavour="$IN_FLAVOUR"
+          else
+            versions="1.5.5,1.5.6,1.5.7"; url="$TEST_UPDATE_URL"; key="$TEST_UPDATE_KEY"; flavour="test"
+          fi
+          echo "$versions" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(,[0-9]+\.[0-9]+\.[0-9]+)*$' || { echo "bad versions: $versions"; exit 1; }
+          echo "$flavour" | grep -Eq '^(unsigned|test)$' || { echo "bad flavour: $flavour"; exit 1; }
+          matrix=$(echo "$versions" | tr ',' '\n' | jq -R . | jq -cs '{version: .}')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+          echo "flavour=$flavour" >> "$GITHUB_OUTPUT"
+          echo "builds: $matrix, update folder '$url', key '$key', flavour $flavour"
+
+  update-checks:
+    name: Update file checks and the helper script (REMOTE-EASY-4)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: libsodium from the system (sodiumoxide)
+        run: |
+          sudo apt-get update -y > /dev/null
+          sudo apt-get install -y libsodium-dev pkg-config > /dev/null
+          echo "SODIUM_USE_PKG_CONFIG=1" >> "$GITHUB_ENV"
+
+      - name: The test key in the program equals the one these tests check
+        run: |
+          grep -F 'pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' src/emilli_update.rs
+          grep -F 'pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' ci/emilli-update-tests/src/lib.rs
+
+      - name: The signed version file's checks (src/emilli_update/verify.rs), each refusal
+        run: cargo test --manifest-path ci/emilli-update-tests/Cargo.toml -- --nocapture 2>&1 | tail -30
+
+      - name: Same, exit code
+        run: cargo test --manifest-path ci/emilli-update-tests/Cargo.toml -q
+
+      - name: The update helper and the version-file signer parse
+        shell: pwsh
+        run: |
+          $errors = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/src/emilli_update/update.ps1", [ref]$null, [ref]$errors)
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Host $_ }; throw 'update.ps1 does not parse' }
+          $bytes = [IO.File]::ReadAllBytes("$PWD/src/emilli_update/update.ps1")
+          if (@($bytes | Where-Object { $_ -gt 127 }).Count -gt 0) { throw 'update.ps1 is not plain ASCII' }
+          Write-Host 'update.ps1 parses, plain ASCII'
+
   bridge:
     name: Generate the Flutter-Rust bridge
     runs-on: ubuntu-22.04
@@ -95,7 +187,7 @@ jobs:
         continue-on-error: true
         run: |
           cd flutter
-          flutter analyze --no-fatal-infos --no-fatal-warnings lib/common/widgets/toolbar.dart lib/common/widgets/dialog.dart lib/desktop/pages/desktop_setting_page.dart lib/desktop/widgets/remote_toolbar.dart lib/desktop/pages/server_page.dart lib/mobile/pages/remote_page.dart lib/mobile/pages/settings_page.dart lib/common/widgets/emilli_account.dart lib/desktop/pages/connection_page.dart lib/models/peer_tab_model.dart lib/common.dart lib/desktop/widgets/tabbar_widget.dart lib/common/widgets/peer_card.dart lib/models/user_model.dart lib/models/group_model.dart lib/desktop/pages/install_page.dart lib/desktop/pages/desktop_home_page.dart lib/models/native_model.dart
+          flutter analyze --no-fatal-infos --no-fatal-warnings lib/common/widgets/toolbar.dart lib/common/widgets/dialog.dart lib/desktop/pages/desktop_setting_page.dart lib/desktop/widgets/remote_toolbar.dart lib/desktop/pages/server_page.dart lib/mobile/pages/remote_page.dart lib/mobile/pages/settings_page.dart lib/common/widgets/emilli_account.dart lib/desktop/pages/connection_page.dart lib/models/peer_tab_model.dart lib/common.dart lib/desktop/widgets/tabbar_widget.dart lib/common/widgets/peer_card.dart lib/models/user_model.dart lib/models/group_model.dart lib/desktop/pages/install_page.dart lib/desktop/pages/desktop_home_page.dart lib/models/native_model.dart lib/common/widgets/emilli_update.dart
 
       - name: Upload bridge files
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -139,10 +231,18 @@ jobs:
           path: ./RustDeskTempTopMostWindow/WindowInjection/x64/Release/WindowInjection.dll
 
   windows:
-    name: Windows app (x64)
-    needs: [bridge, topmost]
+    name: Windows app (x64) ${{ matrix.version }}
+    needs: [plan, bridge, topmost, update-checks]
     runs-on: windows-2022
     timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      VERSION: ${{ matrix.version }}
+      EMILLI_UPDATE_URL: ${{ needs.plan.outputs.url }}
+      EMILLI_UPDATE_KEY: ${{ needs.plan.outputs.key }}
+      FLAVOUR: ${{ needs.plan.outputs.flavour }}
     steps:
       - name: Export GitHub Actions cache environment variables
         uses: actions/github-script@d7906e4ad0b1822421a7e6a35d5ca353c962f410 # v6
@@ -220,6 +320,17 @@ jobs:
             exit 1
           fi
           head -n 100 "${VCPKG_ROOT}/buildtrees/ffmpeg/build-x64-windows-static-rel-out.log" || true
+
+      - name: Version ${{ matrix.version }} and the update folder compiled in
+        shell: bash
+        run: |
+          python .github/scripts/set-version.py "$VERSION"
+          if [ -z "$EMILLI_UPDATE_URL" ] || [ -z "$EMILLI_UPDATE_KEY" ]; then
+            echo "no update folder or key: this build has no updater"
+            echo "EMILLI_UPDATE_URL=" >> "$GITHUB_ENV"; echo "EMILLI_UPDATE_KEY=" >> "$GITHUB_ENV"
+          else
+            echo "update folder $EMILLI_UPDATE_URL, key $EMILLI_UPDATE_KEY"
+          fi
 
       - name: Build rustdesk
         run: |
@@ -312,6 +423,18 @@ jobs:
           if (-not $internal) { $bad++ }
           if ($bad -gt 0) { throw "$bad name checks failed" }
 
+      - name: The update folder and key inside the program (REMOTE-EASY-4)
+        shell: bash
+        run: |
+          if [ -n "$EMILLI_UPDATE_URL" ]; then
+            grep -c -F "$EMILLI_UPDATE_URL" rustdesk/EmilliRemoteCore.dll
+            grep -c -F "$EMILLI_UPDATE_KEY" rustdesk/EmilliRemoteCore.dll
+            echo "PASS the update folder and key are compiled in"
+          fi
+          grep -c -F "emilli-remote-update|v1" rustdesk/EmilliRemoteCore.dll
+          grep -c -F "WaitNamedPipe" rustdesk/EmilliRemoteCore.dll
+          echo "PASS the version-file context and the helper script are inside"
+
       - name: Build self-extracted executable (as upstream)
         shell: bash
         run: |
@@ -328,7 +451,7 @@ jobs:
       - name: Upload the unsigned installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: emilli-rustdesk-${{ env.VERSION }}-windows-x86_64-unsigned
+          name: emilli-rustdesk-${{ env.VERSION }}-windows-x86_64-${{ env.FLAVOUR }}
           path: ./out/rustdesk-${{ env.VERSION }}-x86_64.exe
           retention-days: ${{ env.RETENTION_DAYS }}
           compression-level: 0

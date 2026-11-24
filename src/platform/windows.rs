@@ -1920,6 +1920,13 @@ fn get_uninstall(kill_self: bool, uninstall_printer: bool) -> ResultType<String>
 }
 
 pub fn uninstall_me(kill_self: bool) -> ResultType<()> {
+    uninstall_me_and(kill_self, "")
+}
+
+/// Emilli Remote (REMOTE-EASY-4): the uninstall with more commands after it, in the same elevated
+/// script (src/emilli_removal.rs: the updater's folder, firewall rules, and for "remove
+/// everything" the settings).
+pub fn uninstall_me_and(kill_self: bool, extra: &str) -> ResultType<()> {
     if is_self_service_running() {
         // This CLI entry is synchronous. Portable builds reuse the retained user configuration.
         let result = tokio::runtime::Builder::new_current_thread()
@@ -1938,7 +1945,12 @@ pub fn uninstall_me(kill_self: bool) -> ResultType<()> {
             }
         }
     }
-    run_cmds(get_uninstall(kill_self, true)?, true, "uninstall")
+    run_cmds(
+        format!("{}
+{}", get_uninstall(kill_self, true)?, extra),
+        true,
+        "uninstall",
+    )
 }
 
 fn write_vbs(cmds: String, tip: &str) -> ResultType<PathBuf> {
