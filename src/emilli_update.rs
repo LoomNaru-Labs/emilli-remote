@@ -134,8 +134,9 @@ fn write_result(v: &serde_json::Value) {
     }
 }
 
-/// Serves the app's requests ("state", "check", "install", "ack") in the process that registered
-/// with the ID server; never blocks (the work runs on its own thread). Returns the state as JSON.
+/// Serves the app's requests ("state", "check", "install", "ack"; "auto" runs the scheduled check
+/// now, for support and the CI test) in the process that registered with the ID server; never
+/// blocks (the work runs on its own thread). Returns the state as JSON.
 pub fn handle_ipc(request: &str) -> String {
     let op = serde_json::from_str::<serde_json::Value>(request)
         .ok()
@@ -145,6 +146,9 @@ pub fn handle_ipc(request: &str) -> String {
         match op.as_str() {
             "check" => start(Job::Check),
             "install" => start(Job::Install { reopen: true }),
+            "auto" => {
+                std::thread::spawn(scheduled_check);
+            }
             "ack" => {
                 if let Some(mut r) = read_result() {
                     r["shown"] = json!(1);

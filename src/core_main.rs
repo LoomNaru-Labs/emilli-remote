@@ -464,6 +464,17 @@ pub fn core_main() -> Option<CoreMainAction> {
         } else if args[0] == "--get-id" {
             println!("{}", crate::ipc::get_id());
             return None;
+        } else if args[0] == "--emilli-update" {
+            // Emilli Remote (REMOTE-EASY-4), for support and the CI test: the same requests as the
+            // app's buttons ("state", "check", "install") and "auto", the scheduled check with its
+            // automatic install, now. Prints the updater's state as JSON.
+            #[cfg(windows)]
+            {
+                let op = args.get(1).map(|s| s.as_str()).unwrap_or("state");
+                let request = serde_json::json!({ "op": op }).to_string();
+                println!("{}", crate::emilli_update::ask_service(request));
+            }
+            return None;
         } else if args[0] == "--set-id" {
             if is_cli_setting_change_disabled() {
                 println!("Settings are disabled!");
