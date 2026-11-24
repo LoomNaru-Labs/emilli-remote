@@ -10,7 +10,7 @@ mod dep {
 }
 
 /// Same value as `emilli_update::TEST_KEY_B64` in the program.
-pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";
+pub const TEST_KEY_B64: &str = "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";
 
 #[path = "../../../src/emilli_update/verify.rs"]
 pub mod verify;

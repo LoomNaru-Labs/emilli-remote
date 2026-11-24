@@ -53,7 +53,7 @@ env:
   VERSION: "1.5.5"
   # The test builds' update folder and key (see the header).
   TEST_UPDATE_URL: "http://127.0.0.1:21180/update/"
-  TEST_UPDATE_KEY: "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU="
+  TEST_UPDATE_KEY: "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU="
   RUST_VERSION: "1.75"
   LLVM_VERSION: "15.0.6"
   FLUTTER_VERSION: "3.24.5"
@@ -113,8 +113,8 @@ jobs:
 
       - name: The test key in the program equals the one these tests check
         run: |
-          grep -F 'pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' src/emilli_update.rs
-          grep -F 'pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' ci/emilli-update-tests/src/lib.rs
+          grep -F 'pub const TEST_KEY_B64: &str = "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' src/emilli_update.rs
+          grep -F 'pub const TEST_KEY_B64: &str = "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";' ci/emilli-update-tests/src/lib.rs
 
       - name: The signed version file's checks (src/emilli_update/verify.rs), each refusal
         run: cargo test --manifest-path ci/emilli-update-tests/Cargo.toml -- --nocapture 2>&1 | tail -30

@@ -40,7 +40,7 @@ use std::{
 
 /// The test builds' key. Its private half comes from a public seed (verify.rs, test
 /// `the_test_key_matches_its_public_seed`), so a build that trusts it updates only from 127.0.0.1.
-pub const TEST_KEY_B64: &str = "Q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";
+pub const TEST_KEY_B64: &str = "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";
 pub const VERSION_FILE: &str = "emilli-remote-update.json";
 pub const OPTION_AUTO: &str = "emilli-auto-update";
 pub const PLATFORM: &str = "windows-x86_64";
