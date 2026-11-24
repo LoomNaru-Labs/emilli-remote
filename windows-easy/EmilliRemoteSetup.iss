@@ -21,13 +21,20 @@
 ;   Emilli-Remote-Setup-1.5.4.exe /VERYSILENT /SUPPRESSMSGBOXES [/IDFILE=<file>] [/LOG=<file>]
 ; Exit code 0 means every step worked, 10 means a step failed.
 ;
+; REMOTE-EASY-4: the Setup keeps a copy of itself in <Program Files>\EmilliRemoteUpdate\kept (only
+; administrators write there). The program's updater runs it to put this version back when a newer
+; one does not start properly. Removal ("Uninstall Emilli Remote") deletes that folder.
+;
 ; Compile: ISCC.exe /DProgramDir=<folder with the program> /DProgramSha256=<its SHA-256> EmilliRemoteSetup.iss
+; (/DAppVersion=<x.y.z> builds the same script for another version of the program, as the CI test does)
 ; The CI end-to-end test compiles the same script with /DServerHost, /DServerKey and /DApiUrl
 ; pointing at a test server on the runner; the release build uses the defaults below.
 
-#define AppVersion "1.5.4"
-#define ProgramExe "rustdesk-1.5.4-x86_64.exe"
-#define ProgramName "EmilliRemote-1.5.4-x86_64.exe"
+#ifndef AppVersion
+  #define AppVersion "1.5.5"
+#endif
+#define ProgramExe "rustdesk-" + AppVersion + "-x86_64.exe"
+#define ProgramName "EmilliRemote-" + AppVersion + "-x86_64.exe"
 #ifndef ServerHost
   #define ServerHost "rd.emillis.net"
 #endif
@@ -42,7 +49,7 @@
 #define ServerConfig "host=" + ServerHost + ",key=" + ServerKey + ",api=" + ApiUrl + ","
 
 #ifndef ProgramDir
-  #error Pass /DProgramDir=<folder that holds rustdesk-1.5.3-x86_64.exe from branch easy3-windows>
+  #error Pass /DProgramDir=<folder that holds rustdesk-<version>-x86_64.exe from branch easy4-windows>
 #endif
 #ifndef ProgramSha256
   #error Pass /DProgramSha256=<SHA-256 of that file>
@@ -121,6 +128,12 @@ function WaitNamedPipe(Name: String; TimeOut: Cardinal): Integer;
 function InstalledExe: String;
 begin
   Result := ExpandConstant('{commonpf64}\EmilliRemote\EmilliRemote.exe');
+end;
+
+{ The Setup of the installed version, kept for the updater's way back (REMOTE-EASY-4). }
+function KeptSetup: String;
+begin
+  Result := ExpandConstant('{commonpf64}\EmilliRemoteUpdate\kept\Emilli-Remote-Setup.exe');
 end;
 
 function InstalledExePath(Param: String): String;
@@ -377,6 +390,13 @@ begin
   end;
   PcId := Answer;
   Log('Emilli: this PC''s number ' + PcId);
+
+  { 5. This Setup, kept for the updater's way back. }
+  if ForceDirectories(ExtractFileDir(KeptSetup)) and
+    FileCopy(ExpandConstant('{srcexe}'), KeptSetup, False) then
+    Log('Emilli: Setup kept at ' + KeptSetup)
+  else
+    Log('Emilli: could not keep this Setup at ' + KeptSetup + ' (the updater will not install over it)');
   SetStatus('끝  /  Done', 5);
 end;
 

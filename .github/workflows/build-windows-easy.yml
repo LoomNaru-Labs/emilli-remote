@@ -10,12 +10,26 @@
 #        check the service, the settings files, the store PC password and --get-id after
 #        each, and uninstall between the runs. rd.emillis.net is blocked in the runner's
 #        hosts file, so the test never registers a device on our server.
+# REMOTE-EASY-4: Setup 1.5.5 keeps a copy of itself for the program's updater (way back), and the
+# test removes with the switch for scripts (--keep-settings). The program is pinned below to the
+# TEST build of 1.5.5 (updates only from 127.0.0.1, test key); the release Setup is built by
+# workflow_dispatch with the release build's run id, artifact and SHA-256 (the lead's release plan).
 name: Build Windows setup
 
 on:
   workflow_dispatch:
+    inputs:
+      program_run_id:
+        description: "Run id of the program build (build-windows-emilli.yml on easy4-windows)"
+        default: ""
+      program_artifact:
+        description: "Its artifact name (emilli-rustdesk-1.5.5-windows-x86_64-unsigned for the release)"
+        default: ""
+      program_sha256:
+        description: "SHA-256 of rustdesk-1.5.5-x86_64.exe in it"
+        default: ""
   push:
-    branches: [easy-windows-153, easy3-setup]
+    branches: [easy-windows-153, easy3-setup, easy4-setup]
     paths:
       - "windows-easy/**"
       - ".github/workflows/build-windows-easy.yml"
@@ -29,11 +43,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERSION: "1.5.4"
-  # Branch easy3-windows, workflow build-windows-emilli.yml, run 43606833338 (commit 5180c8b).
-  RUSTDESK_RUN_ID: "43606833338"
-  RUSTDESK_ARTIFACT: emilli-rustdesk-1.5.4-windows-x86_64-unsigned
-  RUSTDESK_SHA256: 7d4e81a78dda3d5cebf901921b19b63a72b257927213fc65d9a8834e74a89a9f
+  VERSION: "1.5.5"
+  # Branch easy4-windows, workflow build-windows-emilli.yml (the test build of 1.5.5 unless the
+  # dispatch names another run).
+  RUSTDESK_RUN_ID: ${{ github.event.inputs.program_run_id || '45402737307' }}
+  RUSTDESK_ARTIFACT: ${{ github.event.inputs.program_artifact || 'emilli-rustdesk-1.5.5-windows-x86_64-test' }}
+  RUSTDESK_SHA256: ${{ github.event.inputs.program_sha256 || '74f96e89937f83b7d0c907be1327f41b28fc3fec4dcdeb5cd1a7b513563d1410' }}
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"
@@ -208,8 +223,8 @@ jobs:
       matrix:
         include:
           - which: released
-            run_id: "43595051024"
-            version: "1.5.3"
+            run_id: "43613242893"
+            version: "1.5.4"
             mode: inventory
           - which: this-run
             run_id: ""
@@ -221,7 +236,7 @@ jobs:
             run_id: ""
             version: ""
             mode: check
-            before_run_id: "43595051024"
+            before_run_id: "43613242893"
     env:
       PUBLIC_REPO: LoomNaru-Labs/emilli-remote
       CAPTURE_COMMIT: cde731dff4725554a14748413d61506ef97f2b0d
@@ -252,7 +267,7 @@ jobs:
         if: matrix.before_run_id != ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          name: emilli-remote-setup-1.5.3-windows
+          name: emilli-remote-setup-1.5.4-windows
           path: before
           run-id: ${{ matrix.before_run_id }}
           github-token: ${{ github.token }}
@@ -276,7 +291,7 @@ jobs:
         shell: powershell
         run: |
           $before = @()
-          if ('${{ matrix.before_run_id }}') { $before = @('-Before', "$env:GITHUB_WORKSPACE\before\Emilli-Remote-Setup-1.5.3.exe") }
+          if ('${{ matrix.before_run_id }}') { $before = @('-Before', "$env:GITHUB_WORKSPACE\before\Emilli-Remote-Setup-1.5.4.exe") }
           powershell -NoProfile -ExecutionPolicy Bypass -File windows-easy\names-check.ps1 -Setup "$env:GITHUB_WORKSPACE\setup\Emilli-Remote-Setup-$env:SETUP_VERSION.exe" -Lib "$env:GITHUB_WORKSPACE\capture\SessionLib.cs" -Out "$env:RUNNER_TEMP\names" -Mode ${{ matrix.mode }} @before
 
       - name: Keep the pictures and the list

@@ -7,6 +7,9 @@
 #      looks (installed apps, shortcuts, Start menu, start-up list, services, firewall, printers,
 #      file properties, window titles, process names);
 #   4. "Uninstall" from Windows' installed apps, then: nothing listed, nothing left running.
+#      (REMOTE-EASY-4: the entry asks "keep settings or remove everything"; the test answers with
+#      the switch for scripts, --keep-settings, and checks the kept Setup is there before and gone
+#      after.)
 # Every check prints "PASS" or "FAIL"; the script ends with an error if any check failed.
 param(
     [Parameter(Mandatory)] [string] $Setup,
@@ -148,11 +151,16 @@ Write-Host "  window titles: $($titles -join ' | ')"
 Check 'window titles: the old name nowhere' (@($titles | Where-Object { $_ -match $Bad }).Count -eq 0) ''
 
 # ---------------------------------------------------------------- 4. uninstall from installed apps
+$kept = 'C:\Program Files\EmilliRemoteUpdate\kept\Emilli-Remote-Setup.exe'
+$keptHash = if (Test-Path $kept) { (Get-FileHash -Algorithm SHA256 $kept).Hash.ToLower() } else { '' }
+Check 'the Setup kept for the updater is this Setup' ($keptHash -eq (Get-FileHash -Algorithm SHA256 $Setup).Hash.ToLower()) $kept
 $entry = $ours | Select-Object -First 1
 if ($entry) {
     $cmd = [string]$entry.UninstallString
-    Write-Host "Uninstall: $cmd"
+    Write-Host "Uninstall: $cmd --keep-settings"
     if ($cmd -match '^\s*"([^"]+)"\s*(.*)$') { $exe, $args2 = $Matches[1], $Matches[2] } else { $exe, $args2 = $cmd, '' }
+    Check 'the installed apps entry runs the removal with its question' ($args2.Trim() -eq '--uninstall') $args2
+    $args2 = "$args2 --keep-settings"
     $u = Start-Process -FilePath $exe -ArgumentList $args2 -PassThru
     $u.WaitForExit(180000) | Out-Null
     $end = (Get-Date).AddSeconds(90)
@@ -162,6 +170,7 @@ $after = @(Uninstall-Entries | Where-Object { $_.DisplayName -match '(?i)emilli'
 Check 'after uninstall: nothing listed in installed apps' ($after.Count -eq 0) (($after | ForEach-Object { $_.DisplayName }) -join ', ')
 Check 'after uninstall: service gone' (-not (Get-Service -Name EmilliRemote -ErrorAction SilentlyContinue)) ''
 Check 'after uninstall: program folder gone' (-not (Test-Path 'C:\Program Files\EmilliRemote')) ''
+Check 'after uninstall: the updater''s folder gone' (-not (Test-Path 'C:\Program Files\EmilliRemoteUpdate')) ''
 $leftLinks = @(Shortcut-Names | Where-Object { (Split-Path -Leaf $_) -match '(?i)emilli' -or (Split-Path -Leaf $_) -match $Bad })
 Check 'after uninstall: no shortcut left' ($leftLinks.Count -eq 0) ($leftLinks -join ', ')
 $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -match '(?i)emilliremote' -or $_.ProcessName -match $Bad })
