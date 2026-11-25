@@ -503,8 +503,17 @@ fn reopen_after_update() {
             r["reopened"] = json!(1);
             write_result(&r);
             log::info!("update result {}: opening the window", r["result"]);
+            // Shown: run_as_user starts the process with SW_HIDE in its start-up information,
+            // which Windows applies to the window's first ShowWindow, so the window stayed hidden
+            // until someone opened the program again (laptop end to end, 2026-11-25).
             #[cfg(windows)]
-            hbb_common::allow_err!(crate::platform::run_as_user(vec![]));
+            if let Ok(exe) = std::env::current_exe() {
+                hbb_common::allow_err!(crate::platform::run_exe_in_cur_session(
+                    &exe.to_string_lossy(),
+                    vec![],
+                    true
+                ));
+            }
             return;
         }
         std::thread::sleep(Duration::from_secs(5));
