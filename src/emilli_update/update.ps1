@@ -87,6 +87,12 @@ function Save-Result([string] $Kind, [string] $Detail) {
 }
 
 Log "update $From -> $Version with $Setup"
+# The result of an earlier update goes first. The new version's process looks for this update's
+# result from its start and stops at the first result it finds: an earlier one (already reopened,
+# or older than 30 minutes) ended that wait before this one was written, so the window stayed
+# closed after a second update and came up by itself after the next one (laptop run of
+# 2026-11-25 14:33Z).
+Remove-Item -Force -Path $Result -ErrorAction SilentlyContinue
 $Previous = Join-Path $Work 'previous-setup.exe'
 try { Copy-Item -Force -Path $Kept -Destination $Previous -ErrorAction Stop } catch {
     Log "no Setup of the running version to go back to: $($_.Exception.Message)"
