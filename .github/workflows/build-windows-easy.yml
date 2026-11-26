@@ -14,19 +14,21 @@
 # test removes with the switch for scripts (--keep-settings). The program is pinned below to the
 # TEST build of 1.5.5 (updates only from 127.0.0.1, test key); the release Setup is built by
 # workflow_dispatch with the release build's run id, artifact and SHA-256 (the lead's release plan).
+# REMOTE-UX-1 (branch ux1-setup): Setup 1.5.6, no page to press when all goes well; the program is
+# pinned to the TEST build of 1.5.6 of ux1-windows until the dispatch names the release build.
 name: Build Windows setup
 
 on:
   workflow_dispatch:
     inputs:
       program_run_id:
-        description: "Run id of the program build (build-windows-emilli.yml on easy4-windows)"
+        description: "Run id of the program build (build-windows-emilli.yml on ux1-windows)"
         default: ""
       program_artifact:
-        description: "Its artifact name (emilli-rustdesk-1.5.5-windows-x86_64-unsigned for the release)"
+        description: "Its artifact name (emilli-rustdesk-1.5.6-windows-x86_64-unsigned for the release)"
         default: ""
       program_sha256:
-        description: "SHA-256 of rustdesk-1.5.5-x86_64.exe in it"
+        description: "SHA-256 of rustdesk-1.5.6-x86_64.exe in it"
         default: ""
   push:
     branches: [easy-windows-153, easy3-setup, easy4-setup]
@@ -43,12 +45,12 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VERSION: "1.5.5"
-  # Branch easy4-windows, workflow build-windows-emilli.yml (the test build of 1.5.5 unless the
-  # dispatch names another run).
-  RUSTDESK_RUN_ID: ${{ github.event.inputs.program_run_id || '45402737307' }}
-  RUSTDESK_ARTIFACT: ${{ github.event.inputs.program_artifact || 'emilli-rustdesk-1.5.5-windows-x86_64-test' }}
-  RUSTDESK_SHA256: ${{ github.event.inputs.program_sha256 || '74f96e89937f83b7d0c907be1327f41b28fc3fec4dcdeb5cd1a7b513563d1410' }}
+  VERSION: "1.5.6"
+  # Branch ux1-windows, workflow build-windows-emilli.yml (the test build of 1.5.6, run 45842698623 of
+  # commit 60147298, unless the dispatch names another run).
+  RUSTDESK_RUN_ID: ${{ github.event.inputs.program_run_id || '45842698623' }}
+  RUSTDESK_ARTIFACT: ${{ github.event.inputs.program_artifact || 'emilli-rustdesk-1.5.6-windows-x86_64-test' }}
+  RUSTDESK_SHA256: ${{ github.event.inputs.program_sha256 || '10533d4845174e9c479dfcfc4b550b6d76a778d68b7c978dbd91430568e030de' }}
   INNO_URL: https://github.com/jrsoftware/issrc/releases/download/is-6_7_4/innosetup-6.7.4.exe
   INNO_SHA256: a549929319f9120716677c685535ca4671e4b937b5fdc87e2585f32d8eb30e8c
   PYNACL_VERSION: "1.5.0"

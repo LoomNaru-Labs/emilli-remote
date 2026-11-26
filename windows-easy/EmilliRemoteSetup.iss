@@ -31,7 +31,7 @@
 ; pointing at a test server on the runner; the release build uses the defaults below.
 
 #ifndef AppVersion
-  #define AppVersion "1.5.5"
+  #define AppVersion "1.5.6"
 #endif
 #define ProgramExe "rustdesk-" + AppVersion + "-x86_64.exe"
 #define ProgramName "EmilliRemote-" + AppVersion + "-x86_64.exe"
