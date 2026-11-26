@@ -14,3 +14,7 @@ pub const TEST_KEY_B64: &str = "q0Q5gYXRMYQTaDq9YTl87Q3PnzL4b5ZAaMK5KfWz3ZU=";
 
 #[path = "../../../src/emilli_update/verify.rs"]
 pub mod verify;
+
+/// REMOTE-EASY-5: when the program updates by itself (default on, registered, trial, skip).
+#[path = "../../../src/emilli_update/policy.rs"]
+pub mod policy;

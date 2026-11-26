@@ -18,10 +18,18 @@
 //!   (`<Program Files>\EmilliRemoteUpdate\kept`, written by Emilli Remote Setup), then writes
 //!   `last-result.json`. The new process reopens the window when the update was started from it,
 //!   and the window says what happened, once.
-//! - Automatic: with the setting `emilli-auto-update` on (off by default), a found update installs
-//!   by itself when no remote session is active; with a session, it waits and tries again every
-//!   30 minutes. No quiet hours.
+//! - Automatic (REMOTE-EASY-5: on unless someone turned it off, policy.rs): a found update
+//!   installs by itself when no remote session is active; with a session, it waits and tries again
+//!   every 30 minutes. No quiet hours. The scheduled checks are spread (the first a random 1 to 60
+//!   minutes after the service starts, then every 24 hours plus a random 0 to 60 minutes).
+//! - An update that leaves the PC unreachable undoes itself (REMOTE-EASY-5): the helper also waits
+//!   until the new version is registered with its ID server and stays so for 10 minutes ("registered"
+//!   in this process's state, from the ID server's answers), and puts the previous version back
+//!   otherwise; time when the helper itself cannot reach the ID server does not count (no
+//!   connection at all is not a failed update). A version put back is not installed again by
+//!   itself, and no second update starts while one is being tried.
 
+pub mod policy;
 pub mod verify;
 
 #[allow(unused_imports)]
@@ -34,7 +42,10 @@ use hbb_common::{config::Config, log, tokio};
 use serde_json::json;
 use std::{
     path::PathBuf,
-    sync::{Mutex, Once},
+    sync::{
+        atomic::{AtomicI64, Ordering},
+        Mutex, Once,
+    },
     time::Duration,
 };
 
@@ -48,10 +59,30 @@ pub const PLATFORM: &str = "windows-x86_64";
 pub const UPDATER_DIR: &str = "EmilliRemoteUpdate";
 pub const KEPT_SETUP: &str = "Emilli-Remote-Setup.exe";
 const RESULT_FILE: &str = "last-result.json";
+/// Written by the helper while it tries a new version (work folder), and when it put one back.
+const TRIAL_FILE: &str = "trial.json";
+const SKIP_FILE: &str = "skip.json";
+pub use policy::RESUME_TASK;
 const HELPER: &str = include_str!("emilli_update/update.ps1");
-const FIRST_CHECK: Duration = Duration::from_secs(30);
-const DAY: Duration = Duration::from_secs(24 * 60 * 60);
 const RETRY: Duration = Duration::from_secs(30 * 60);
+
+/// When the ID server last answered this process's registration (Unix seconds; 0: not yet).
+static LAST_REGISTERED: AtomicI64 = AtomicI64::new(0);
+
+/// Called by the rendezvous mediator on every answer of the ID server to this PC's registration.
+pub fn note_registered() {
+    LAST_REGISTERED.store(now(), Ordering::Relaxed);
+}
+
+/// Registered with the ID server the way a working install is (policy.rs).
+pub fn registered() -> bool {
+    policy::is_registered(Config::get_key_confirmed(), LAST_REGISTERED.load(Ordering::Relaxed), now())
+}
+
+/// The ID server this PC registers with, as host:port (the helper checks it can reach it).
+fn id_server() -> String {
+    crate::check_port(Config::get_rendezvous_server(), hbb_common::config::RENDEZVOUS_PORT)
+}
 
 /// The update folder and key of this build, or None (no updater in this build).
 pub fn config() -> Option<(&'static str, [u8; 32])> {
@@ -98,7 +129,17 @@ fn now() -> i64 {
 }
 
 fn auto_on() -> bool {
-    Config::get_option(OPTION_AUTO) == "Y"
+    policy::auto_enabled(&Config::get_option(OPTION_AUTO))
+}
+
+fn trial_active() -> bool {
+    let text = updater_dir().and_then(|d| std::fs::read_to_string(d.join("work").join(TRIAL_FILE)).ok());
+    policy::trial_active(text.as_deref(), now())
+}
+
+fn skipped() -> String {
+    let text = updater_dir().and_then(|d| std::fs::read_to_string(d.join(SKIP_FILE)).ok());
+    policy::skipped_version(text.as_deref())
 }
 
 fn program_dir() -> Option<PathBuf> {
@@ -173,11 +214,13 @@ pub fn state_json() -> String {
         s.error = "stalled".to_owned();
     }
     let offer = s.offer.clone();
+    let trial = trial_active();
     json!({
         "configured": config().is_some(),
         "installed": crate::platform::is_installed(),
         "current": crate::VERSION,
-        "busy": s.busy,
+        // While the helper tries the new version, the app says so and offers no button.
+        "busy": if s.busy.is_empty() && trial { "confirming" } else { s.busy },
         "status": s.status,
         "version": offer.as_ref().map(|o| o.version.clone()).unwrap_or_default(),
         "notes_ko": offer.as_ref().map(|o| o.notes_ko.clone()).unwrap_or_default(),
@@ -187,6 +230,9 @@ pub fn state_json() -> String {
         "auto": auto_on(),
         "auto_waiting": s.auto_waiting,
         "result": read_result(),
+        "registered": registered(),
+        "trial": trial,
+        "skipped": skipped(),
     })
     .to_string()
 }
@@ -219,14 +265,10 @@ fn start(job: Job) {
             }
             Job::Install { reopen } => reopen,
         };
+        // The version file as it is now: an offer kept from an earlier check may name a Setup that
+        // a newer release has replaced (two releases one after the other).
+        check_now();
         let offer = STATE.lock().unwrap().offer.clone();
-        let offer = match offer {
-            Some(o) => Some(o),
-            None => {
-                check_now();
-                STATE.lock().unwrap().offer.clone()
-            }
-        };
         let result = match offer {
             Some(o) => install(&o, reopen),
             None => Err(STATE.lock().unwrap().error.clone()),
@@ -362,6 +404,10 @@ fn install(offer: &verify::Offer, reopen: bool) -> Result<(), String> {
     let (base, _) = config().ok_or_else(|| "not-configured".to_owned())?;
     let program = program_dir().ok_or_else(|| "not-installed".to_owned())?;
     let dir = updater_dir().ok_or_else(|| "not-installed".to_owned())?;
+    if trial_active() {
+        // The helper is still trying the last update; its work folder stays as it is.
+        return Err("busy".to_owned());
+    }
     let kept = dir.join("kept").join(KEPT_SETUP);
     if !kept.is_file() {
         // Without the Setup of the running version there is nothing to go back to.
@@ -407,6 +453,10 @@ fn install(offer: &verify::Offer, reopen: bool) -> Result<(), String> {
         dir.join(RESULT_FILE).to_string_lossy().into(),
         "-Reopen".into(),
         (if reopen { "1" } else { "0" }).into(),
+        "-Server".into(),
+        id_server(),
+        "-Registered".into(),
+        (if registered() { "1" } else { "0" }).into(),
     ];
     launch_helper(&script, &args)
 }
@@ -457,7 +507,10 @@ pub fn start_service_side() {
     STARTED.call_once(|| {
         std::thread::spawn(reopen_after_update);
         std::thread::spawn(|| {
-            std::thread::sleep(FIRST_CHECK);
+            use hbb_common::rand::Rng;
+            let first = policy::first_check_delay(hbb_common::rand::thread_rng().gen());
+            log::info!("first update check in {} s", first);
+            std::thread::sleep(Duration::from_secs(first));
             loop {
                 let wait = scheduled_check();
                 std::thread::sleep(wait);
@@ -474,10 +527,23 @@ fn scheduled_check() -> Duration {
     STATE.lock().unwrap().busy = "checking";
     check_now();
     STATE.lock().unwrap().busy = "";
-    let available = STATE.lock().unwrap().offer.is_some();
-    if !(available && auto_on()) {
+    let day = || {
+        use hbb_common::rand::Rng;
+        Duration::from_secs(policy::daily_delay(hbb_common::rand::thread_rng().gen()))
+    };
+    let offered = STATE.lock().unwrap().offer.as_ref().map(|o| o.version.clone()).unwrap_or_default();
+    let trial = trial_active();
+    let skip = skipped();
+    if !policy::auto_install_allowed(&Config::get_option(OPTION_AUTO), &offered, &skip, trial) {
         STATE.lock().unwrap().auto_waiting = false;
-        return DAY;
+        if trial {
+            log::info!("automatic update waits: the last update is still being tried");
+            return RETRY;
+        }
+        if !offered.is_empty() && offered == skip {
+            log::info!("automatic update: {} was put back before, not installed again by itself", offered);
+        }
+        return day();
     }
     if !crate::updater::has_no_active_conns() {
         log::info!("automatic update waits: a remote session is active");

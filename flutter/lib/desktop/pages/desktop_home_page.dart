@@ -561,7 +561,9 @@ class _DesktopHomePageState extends State<DesktopHomePage>
   Widget? _emilliUpdateCard() {
     final s = _emilliUpdate;
     final busy = (s['busy'] ?? '').toString();
-    final working = busy == 'downloading' || busy == 'installing';
+    // REMOTE-EASY-5: 'confirming' while the new version shows it stays connected.
+    final working =
+        busy == 'downloading' || busy == 'installing' || busy == 'confirming';
     if (!(working || (s['status'] == 'available' && busy.isEmpty))) {
       return null;
     }

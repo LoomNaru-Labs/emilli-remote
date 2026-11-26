@@ -535,6 +535,9 @@ impl RendezvousMediator {
         match msg {
             Some(rendezvous_message::Union::RegisterPeerResponse(rpr)) => {
                 update_latency();
+                // Emilli Remote (REMOTE-EASY-5): the updater tells a registered PC by these answers.
+                #[cfg(windows)]
+                crate::emilli_update::note_registered();
                 if rpr.request_pk {
                     log::info!("request_pk received from {}", self.host);
                     self.register_pk(sink).await?;
@@ -546,6 +549,8 @@ impl RendezvousMediator {
                     Ok(register_pk_response::Result::OK) => {
                         Config::set_key_confirmed(true);
                         Config::set_host_key_confirmed(&self.host_prefix, true);
+                        #[cfg(windows)]
+                        crate::emilli_update::note_registered();
                         *SOLVING_PK_MISMATCH.lock().await = "".to_owned();
                         NEEDS_DEPLOY.store(false, Ordering::SeqCst);
                         #[cfg(target_os = "android")]
@@ -654,6 +659,12 @@ impl RendezvousMediator {
             select! {
                 res = conn.next() => {
                     last_recv_msg = Instant::now();
+                    // Emilli Remote (REMOTE-EASY-5): over TCP the ID server's messages (its
+                    // keep-alives too) show a registered PC once its key is confirmed.
+                    #[cfg(windows)]
+                    if Config::get_key_confirmed() {
+                        crate::emilli_update::note_registered();
+                    }
                     let bytes = res.ok_or_else(|| anyhow::anyhow!("Rendezvous connection is reset by the peer"))??;
                     if bytes.is_empty() {
                         // After fixing frequent register_pk, for websocket, nginx need to set proxy_read_timeout to more than 60 seconds, eg: 120s

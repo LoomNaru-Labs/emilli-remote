@@ -176,6 +176,8 @@ pub fn extra_commands(choice: Choice) -> String {
     if let Some(dir) = crate::emilli_update::updater_dir() {
         s += &rd(&dir);
     }
+    // The update helper's start-up task, there only while it tries a new version (REMOTE-EASY-5).
+    s += &format!("schtasks /Delete /TN {} /F\n", crate::emilli_update::RESUME_TASK);
     let (_, _, _, exe) = crate::platform::windows::get_install_info();
     if !exe.is_empty() {
         s += &format!("netsh advfirewall firewall delete rule name=all program={}\n", quote(Path::new(&exe)));

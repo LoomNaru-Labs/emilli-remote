@@ -92,6 +92,8 @@ String emilliUpdateStatusText(Map<String, dynamic> s) {
       return translate('emilli_update_downloading');
     case 'installing':
       return translate('emilli_update_installing');
+    case 'confirming':
+      return translate('emilli_update_confirming');
   }
   switch (s['status']) {
     case 'available':
