@@ -3897,6 +3897,8 @@ class QualityMonitorData {
   String? targetBitrate;
   String? codecFormat;
   String? chroma;
+  // Emilli Remote (REMOTE-UX-1): what the automatic picture fix is doing (a translation key).
+  String? emilliHeal;
 }
 
 class QualityMonitorModel with ChangeNotifier {
@@ -3970,6 +3972,10 @@ class QualityMonitorModel with ChangeNotifier {
       }
       if (evt.containsKey('chroma') && (evt['chroma'] as String).isNotEmpty) {
         _data.chroma = evt['chroma'];
+      }
+      if (evt.containsKey('emilli_heal')) {
+        final s = evt['emilli_heal'] as String;
+        _data.emilliHeal = s.isEmpty ? null : s;
       }
       notifyListeners();
     } catch (e) {

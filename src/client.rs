@@ -103,6 +103,7 @@ mod audio_playback_recovery;
 #[path = "client/tests/audio_state_tests.rs"]
 mod audio_state_tests;
 pub mod file_trait;
+pub mod heal;
 pub mod helper;
 pub mod io_loop;
 pub mod screenshot;
@@ -2889,6 +2890,9 @@ pub struct LoginConfigHandler {
     pub enable_trusted_devices: bool,
     pub record_state: bool,
     pub record_permission: bool,
+    /// Emilli Remote (REMOTE-UX-1): the helper chose the codec (`.0`) or the quality or fps (`.1`)
+    /// in the menus during this session, so the picture's automatic fix leaves it alone.
+    pub emilli_heal_pin: (bool, bool),
 }
 
 impl Deref for LoginConfigHandler {

@@ -845,6 +845,8 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
     // Emilli: the codec in use, visible without opening a menu.
     if (widget.ffi.connType == ConnType.defaultConn) {
       toolbarItems.add(_CodecBadge(id: widget.id, ffi: widget.ffi));
+      // Emilli (REMOTE-UX-1): one line while the picture is being fixed by itself.
+      toolbarItems.add(_HealLine(ffi: widget.ffi));
     }
     // Do not show keyboard for camera connection type.
     if (widget.ffi.connType == ConnType.defaultConn) {
@@ -1761,6 +1763,46 @@ class _CodecBadge extends StatelessWidget {
               );
             }),
       ],
+    );
+  }
+}
+
+// Emilli: what the automatic picture fix is doing, in one short line beside the codec badge
+// (for example "흐려서 AV1로 바꿨습니다"). Empty while nothing is being changed. The tooltip says
+// how to keep a choice: a codec or quality picked in the menus stays for the session.
+class _HealLine extends StatelessWidget {
+  final FFI ffi;
+  const _HealLine({Key? key, required this.ffi}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: ffi.qualityMonitorModel,
+      builder: (context, _) {
+        final key = ffi.qualityMonitorModel.data.emilliHeal;
+        if (key == null || key.isEmpty) return const Offstage();
+        return Tooltip(
+          message: translate('emilli_heal_tip'),
+          child: Container(
+            key: const ValueKey('emilli-heal-line'),
+            constraints: const BoxConstraints(maxWidth: 300),
+            height: _ToolbarTheme.buttonSize,
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            margin: const EdgeInsets.symmetric(horizontal: 2),
+            decoration: BoxDecoration(
+              color: _ToolbarTheme.inactiveColor,
+              borderRadius: BorderRadius.circular(_ToolbarTheme.iconRadius),
+            ),
+            child: Text(
+              translate(key),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white, fontSize: 12),
+            ),
+          ),
+        );
+      },
     );
   }
 }

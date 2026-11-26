@@ -18,3 +18,7 @@ pub mod verify;
 /// REMOTE-EASY-5: when the program updates by itself (default on, registered, trial, skip).
 #[path = "../../../src/emilli_update/policy.rs"]
 pub mod policy;
+
+/// REMOTE-UX-1: the helper's automatic picture fix (src/client/heal.rs), pure decisions with a virtual clock.
+#[path = "../../../src/client/heal.rs"]
+pub mod heal;

@@ -484,6 +484,8 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn save_custom_image_quality(&self, custom_image_quality: i32) {
+        // Emilli Remote (REMOTE-UX-1): a quality chosen in the menu pins it for this session.
+        self.lc.write().unwrap().emilli_heal_pin.1 = true;
         let msg = self
             .lc
             .write()
@@ -493,6 +495,7 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn save_image_quality(&self, value: String) {
+        self.lc.write().unwrap().emilli_heal_pin.1 = true;
         let msg = self.lc.write().unwrap().save_image_quality(value.clone());
         if let Some(msg) = msg {
             self.send(Data::Message(msg));
@@ -512,6 +515,7 @@ impl<T: InvokeUiSession> Session<T> {
     }
 
     pub fn set_custom_fps(&self, custom_fps: i32) {
+        self.lc.write().unwrap().emilli_heal_pin.1 = true;
         let msg = self.lc.write().unwrap().set_custom_fps(custom_fps, true);
         self.send(Data::Message(msg));
     }

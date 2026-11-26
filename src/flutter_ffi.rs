@@ -2177,6 +2177,8 @@ pub fn session_alternative_codecs(session_id: SessionID) -> String {
 
 pub fn session_change_prefer_codec(session_id: SessionID) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        // Emilli Remote (REMOTE-UX-1): a codec chosen in the menu pins it for this session.
+        session.lc.write().unwrap().emilli_heal_pin.0 = true;
         session.update_supported_decodings();
     }
 }

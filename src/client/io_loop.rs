@@ -104,6 +104,13 @@ pub struct Remote<T: InvokeUiSession> {
     sent_close_reason: bool,
     cursor_dedupe: CursorDedupe,
     trusted_device: crate::trusted_devices::client::Session,
+    // Emilli Remote (REMOTE-UX-1): the picture heals itself (decisions in client/heal.rs).
+    heal: client::heal::Heal,
+    heal_pins: client::heal::Pins,
+    heal_input: bool,
+    heal_av1_offered: bool,
+    heal_offer_at: Option<Instant>,
+    heal_log_at: u64,
 }
 
 #[derive(Default)]
@@ -158,6 +165,12 @@ impl<T: InvokeUiSession> Remote<T> {
             sent_close_reason: false,
             cursor_dedupe: Default::default(),
             trusted_device: Default::default(),
+            heal: client::heal::Heal::new(get_time() as u64, Default::default()),
+            heal_pins: Default::default(),
+            heal_input: false,
+            heal_av1_offered: false,
+            heal_offer_at: None,
+            heal_log_at: 0,
         }
     }
 
@@ -403,6 +416,7 @@ impl<T: InvokeUiSession> Remote<T> {
                                 *v.frame_count.write().unwrap() = 0;
                             });
                             self.fps_control(direct, fps.clone(), &mut peer).await;
+                            let emilli_heal = self.heal_tick(&fps, &mut peer).await;
                             let chroma = self.chroma.read().unwrap().clone();
                             let chroma = match chroma {
                                 Some(Chroma::I444) => "4:4:4",
@@ -420,6 +434,7 @@ impl<T: InvokeUiSession> Remote<T> {
                                 fps,
                                 chroma,
                                 codec_format,
+                                emilli_heal,
                                 ..Default::default()
                             });
                         }
@@ -813,6 +828,12 @@ impl<T: InvokeUiSession> Remote<T> {
                     return true;
                 }
                 match &msg.union {
+                    Some(message::Union::MouseEvent(m)) if (m.mask & 0x7) != 0 => {
+                        self.heal_input = true;
+                    }
+                    Some(message::Union::KeyEvent(_)) => {
+                        self.heal_input = true;
+                    }
                     Some(message::Union::Cliprdr(_)) if !self.is_connected => {
                         log::debug!("Discarding outgoing file clipboard message before login");
                         return true;
@@ -1714,6 +1735,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         return true;
                     };
                     if Self::contains_key_frame(&vf) {
+                        self.heal.on_key_frame(get_time() as u64);
                         thread
                             .video_sender
                             .send(MediaData::VideoFrame(Box::new(vf)))
@@ -2477,6 +2499,9 @@ impl<T: InvokeUiSession> Remote<T> {
                     _ => {}
                 },
                 Some(message::Union::TestDelay(t)) => {
+                    if !t.from_client {
+                        self.heal.on_probe(get_time() as u64, t.last_delay, t.target_bitrate);
+                    }
                     self.handler.handle_test_delay(t, peer).await;
                 }
                 Some(message::Union::AudioFrame(frame)) => {
@@ -3321,5 +3346,192 @@ mod kept_cursor_tests {
         let mut bomb = compressed(4, 4);
         bomb.colors = hbb_common::compress::compress(&vec![0u8; 1 << 20]).into();
         assert!(kept_cursor_rgba(bomb).is_err(), "more pixels than its size");
+    }
+}
+
+// Emilli Remote (REMOTE-UX-1): the picture heals itself. `client/heal.rs` decides from the numbers
+// this loop already has; this sends what it decides with messages every store PC understands
+// (image quality, fps cap, codec preference, refresh), without saving anything into the helper's
+// settings, and writes one log line per step ("emilli-heal: step|back|watch ...", t = Unix ms).
+impl<T: InvokeUiSession> Remote<T> {
+    fn heal_pins_now(&self) -> client::heal::Pins {
+        let lc = self.handler.lc.read().unwrap();
+        let pref = lc.get_option("codec-preference");
+        let q = lc.image_quality.clone();
+        client::heal::Pins {
+            codec: lc.emilli_heal_pin.0 || !(pref.is_empty() || pref == "auto"),
+            quality: lc.emilli_heal_pin.1 || !(q.is_empty() || q == "balanced"),
+            off: lc.get_option("emilli-auto-heal") == "N",
+        }
+    }
+
+    /// The helper's own quality (what "back" sends), its fps and its bitrate ratio.
+    fn heal_home(&self) -> (OptionMessage, i32, f32) {
+        let lc = self.handler.lc.read().unwrap();
+        let mut m = OptionMessage::new();
+        let (ratio, fps) = match lc.image_quality.as_str() {
+            "best" => {
+                m.image_quality = ImageQuality::Best.into();
+                (1.5, 30)
+            }
+            "low" => {
+                m.image_quality = ImageQuality::Low.into();
+                (0.5, 30)
+            }
+            "custom" => {
+                let q = lc.custom_image_quality.first().copied().unwrap_or(50);
+                m.custom_image_quality = q << 8;
+                let fps = lc.get_option("custom-fps").parse().unwrap_or(30);
+                (((q * 2) as f32 / 100.0).clamp(0.2, 40.0), fps)
+            }
+            _ => {
+                m.image_quality = ImageQuality::Balanced.into();
+                (0.67, 30)
+            }
+        };
+        (m, fps, ratio)
+    }
+
+    fn heal_option(o: OptionMessage) -> Message {
+        let mut misc = Misc::new();
+        misc.set_option(o);
+        let mut msg = Message::new();
+        msg.set_misc(misc);
+        msg
+    }
+
+    fn heal_quality(mode: client::heal::Mode, home: OptionMessage) -> OptionMessage {
+        let q = match mode {
+            client::heal::Mode::Normal => return home,
+            client::heal::Mode::Sharp => ImageQuality::Best,
+            client::heal::Mode::Slow => ImageQuality::Low,
+        };
+        let mut m = OptionMessage::new();
+        m.image_quality = q.into();
+        m
+    }
+
+    async fn heal_tick(&mut self, fps: &HashMap<usize, i32>, peer: &mut Stream) -> Option<String> {
+        use client::heal::{Action, Codec, Mode, State, Tick};
+        if !self.handler.is_default() || !self.first_frame {
+            return None;
+        }
+        let now = get_time() as u64;
+        let pins = self.heal_pins_now();
+        if pins != self.heal_pins {
+            self.heal.set_pins(pins);
+            self.heal_pins = pins;
+            log::info!("emilli-heal: pins t={} {}", now, self.heal.describe(now));
+        }
+        let display = self.video_threads.keys().min().copied();
+        let (w, h) = display
+            .and_then(|d| {
+                let lc = self.handler.lc.read().unwrap();
+                lc.peer_info
+                    .as_ref()
+                    .and_then(|pi| pi.displays.get(d).map(|x| (x.width.max(0) as u32, x.height.max(0) as u32)))
+            })
+            .unwrap_or((0, 0));
+        let base_kbps = if w > 0 && h > 0 { scrap::codec::base_bitrate(w, h) } else { 0 };
+        if self.heal_offer_at.map(|t| t.elapsed() > Duration::from_secs(15)).unwrap_or(true) {
+            self.heal_av1_offered = self.handler.alternative_codecs().1;
+            self.heal_offer_at = Some(Instant::now());
+        }
+        let codec = match self.video_format {
+            CodecFormat::VP8 => Codec::Vp8,
+            CodecFormat::VP9 => Codec::Vp9,
+            CodecFormat::AV1 => Codec::Av1,
+            CodecFormat::H264 => Codec::H264,
+            CodecFormat::H265 => Codec::H265,
+            CodecFormat::Unknown => Codec::Other,
+        };
+        let quality_ratio = match self.heal.mode() {
+            Mode::Sharp => 1.5,
+            Mode::Slow => 0.5,
+            Mode::Normal => self.heal_home().2,
+        };
+        let t = Tick {
+            now,
+            fps: display.and_then(|d| fps.get(&d)).copied().unwrap_or(0).max(0) as u32,
+            codec,
+            base_kbps,
+            quality_ratio,
+            av1_offered: self.heal_av1_offered,
+            input: std::mem::take(&mut self.heal_input),
+        };
+        let before = self.heal.state();
+        if let Some(a) = self.heal.tick(&t) {
+            let kind = match a {
+                Action::SetMode(Mode::Normal) | Action::SetAv1(false) => "back",
+                _ => "step",
+            };
+            log::info!(
+                "emilli-heal: {} {:?} t={} fps={} {}x{} codec={:?} {}",
+                kind,
+                a,
+                now,
+                t.fps,
+                w,
+                h,
+                codec,
+                self.heal.describe(now)
+            );
+            self.heal_apply(a, peer).await;
+            self.heal_log_at = now;
+        } else if self.heal.state() != before
+            || (self.heal.state() != State::Ok && now.saturating_sub(self.heal_log_at) >= 10_000)
+            || now.saturating_sub(self.heal_log_at) >= 60_000
+        {
+            log::info!(
+                "emilli-heal: watch t={} fps={} {}x{} codec={:?} {}",
+                now,
+                t.fps,
+                w,
+                h,
+                codec,
+                self.heal.describe(now)
+            );
+            self.heal_log_at = now;
+        }
+        Some(self.heal.status(now).unwrap_or("").to_owned())
+    }
+
+    async fn heal_apply(&mut self, a: client::heal::Action, peer: &mut Stream) {
+        use client::heal::Action;
+        let mut out: Vec<Message> = Vec::new();
+        match a {
+            Action::SetMode(mode) => {
+                let (home, home_fps, _) = self.heal_home();
+                let fps = if mode == client::heal::Mode::Normal { home_fps } else { 10 };
+                out.push(Self::heal_option(Self::heal_quality(mode, home)));
+                out.push(self.handler.lc.write().unwrap().set_custom_fps(fps, false));
+                // as a menu change does: the decode-based fps control starts again under the new cap
+                self.last_auto_fps = None;
+            }
+            Action::SetAv1(on) => {
+                let lc = self.handler.lc.read().unwrap();
+                if on {
+                    let mut d = lc.get_supported_decoding();
+                    d.prefer = supported_decoding::PreferCodec::AV1.into();
+                    let mut o = OptionMessage::new();
+                    o.supported_decoding = hbb_common::protobuf::MessageField::some(d);
+                    out.push(Self::heal_option(o));
+                } else {
+                    // the helper's own preference, as saved
+                    out.push(lc.update_supported_decodings());
+                }
+            }
+            Action::Resharpen => {
+                let (home, _, _) = self.heal_home();
+                out.push(Self::heal_option(Self::heal_quality(self.heal.mode(), home)));
+                let displays: Vec<usize> = self.video_threads.keys().copied().collect();
+                for d in displays {
+                    out.push(client::LoginConfigHandler::refresh_display(d));
+                }
+            }
+        }
+        for m in out {
+            allow_err!(peer.send(&m).await);
+        }
     }
 }

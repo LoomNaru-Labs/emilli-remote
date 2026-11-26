@@ -11,6 +11,9 @@ pub struct QualityStatus {
     pub target_bitrate: Option<i32>,
     pub codec_format: Option<CodecFormat>,
     pub chroma: Option<String>,
+    /// Emilli Remote (REMOTE-UX-1): the automatic picture fix's one line (a translation key; empty
+    /// clears it).
+    pub emilli_heal: Option<String>,
 }
 
 #[inline]
