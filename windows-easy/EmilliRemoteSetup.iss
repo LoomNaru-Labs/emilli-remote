@@ -1,6 +1,6 @@
 ; Emilli Remote Setup (REMOTE-EASY-3: one path, no choices)
 ;
-; One page, one button: it installs Emilli Remote (our build of RustDesk 1.5.3, version 1.5.4, from branch
+; No page to press (REMOTE-UX-1; before it: one page, one button): it installs Emilli Remote (our build of RustDesk 1.5.3, version 1.5.4, from branch
 ; easy3-windows of https://github.com/LoomNaru-Labs/emilli-remote, internal name "EmilliRemote",
 ; shown as "Emilli Remote" everywhere), saves our server in it and opens it. The person then
 ; presses "가입" (sign up) or "로그인" (sign in) in the app; PCs signed in to the same account open
@@ -76,7 +76,10 @@ CreateAppDir=no
 ; The program registers its own entry "Emilli Remote" in Windows' installed apps; Setup adds none.
 Uninstallable=no
 DisableWelcomePage=yes
-DisableReadyPage=no
+; REMOTE-UX-1: no page before installing (Windows has already asked "allow changes" when the
+; Setup starts; the page only said to press Install), and on success no last page either: the
+; app opens by itself (ShouldSkipPage). A failure still ends on the last page with its message.
+DisableReadyPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
@@ -410,6 +413,24 @@ begin
     IdFile := ExpandConstant('{param:IDFILE|}');
     if (InstallError = '') and (IdFile <> '') then
       SaveStringToFile(IdFile, PcId, False);
+  end;
+end;
+
+{ REMOTE-UX-1: after a good install the app opens and the Setup ends without its last page
+  (two presses fewer for someone who wants help now). The [Run] entry stays for an Inno
+  version that still runs it; the program shows its open window instead of a second one. }
+function ShouldSkipPage(PageID: Integer): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := False;
+  if (PageID = wpFinished) and (InstallError = '') and not WizardSilent then
+  begin
+    if ExecAsOriginalUser(InstalledExe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode) then
+      Log('Emilli: the app started, the last page skipped')
+    else
+      Log('Emilli: the app did not start: ' + SysErrorMessage(ResultCode));
+    Result := True;
   end;
 end;
 
