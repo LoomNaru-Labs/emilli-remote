@@ -425,6 +425,14 @@ var
   ResultCode: Integer;
 begin
   Result := False;
+  { No page before installing: DisableReadyPage alone does not do it, because Inno shows the Ready
+    page anyway when no page came before it (laptop walk of 2026-11-26 20:49Z: the page with
+    "Install" was still there). Skipped here, the install starts as the wizard opens. }
+  if PageID = wpReady then
+  begin
+    Result := True;
+    Exit;
+  end;
   if (PageID = wpFinished) and (InstallError = '') and not WizardSilent then
   begin
     { Inno may ask more than once: the app is started once. }
