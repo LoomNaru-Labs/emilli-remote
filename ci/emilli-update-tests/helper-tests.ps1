@@ -42,7 +42,7 @@ function Run-Case([string] $Name, [hashtable] $Opts, [hashtable] $Trial = $null)
 # The virtual second of a call line ("... at 123").
 function At($r, [string] $Like) {
     $l = $r.calls | Where-Object { $_ -like $Like } | Select-Object -First 1
-    if ($l -and $l -match ' at (-?\d+)$') { return [int]$Matches[1] }
+    if ($l -and $l -match ' at (-?[0-9]+)$') { return [int]$Matches[1] }
     return $null
 }
 function Check([string] $Name, [bool] $Ok, $r, [string] $What) {

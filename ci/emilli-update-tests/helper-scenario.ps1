@@ -3,7 +3,7 @@
 # its script-scope variables are this file's), and everything that would touch the PC is replaced:
 # the clock is virtual (Wait-Poll moves it, nothing sleeps), Setups only switch which version is
 # "installed", the service, the registration and the ID server answer as the scenario says, and no
-# task is registered. Every call that matters is written to <Dir>\calls.txt; the helper's own files
+# task is registered. Every call that matters is written to <Dir>/calls.txt; the helper's own files
 # (result, skip, trial, log) land under <Dir>. Plain ASCII (Windows PowerShell 5.1 and PowerShell 7).
 param(
     [Parameter(Mandatory)] [string] $Dir,
