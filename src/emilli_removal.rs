@@ -5,7 +5,9 @@
 //! - keep this PC's settings (the default, as before 1.5.5): the program, its service, shortcuts,
 //!   firewall rules and the updater's folder go; the settings stay, so a later install continues
 //!   as the same PC (number, account, settings);
-//! - remove everything: the same, then every settings folder of every user and of the service
+//! - remove everything (REMOTE-UX-1: only after a second window, a warning that says what it
+//!   costs, whose default is keep settings; see `choice`): the same, then every settings folder of
+//!   every user and of the service
 //!   accounts, the folder the program unpacks into, `C:\ProgramData\EmilliRemote`, the system
 //!   setting the install made, and the PC leaves its account (signed with its own key; when the
 //!   account server cannot be reached, one sentence says how to remove it from the list). A later
@@ -21,11 +23,9 @@
 use hbb_common::log;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Choice {
-    Keep,
-    Everything,
-}
+mod choice;
+use choice::{decide, from_yes_no, ID_EVERYTHING, ID_KEEP, IDCANCEL, WARNING_DEFAULT};
+pub use choice::Choice;
 
 const KEEP_FLAG: &str = "--keep-settings";
 const EVERYTHING_FLAG: &str = "--remove-everything";
@@ -256,24 +256,47 @@ extern "system" {
     fn GetProcAddress(module: *mut std::ffi::c_void, name: *const u8) -> *mut std::ffi::c_void;
 }
 
-const ID_KEEP: i32 = 101;
-const ID_EVERYTHING: i32 = 102;
-const IDCANCEL: i32 = 2;
-const IDYES: i32 = 6;
-const IDNO: i32 = 7;
-
-/// The question; None when the person cancels.
+/// The question; None when the person cancels. "Remove everything" is asked once more (the warning).
 pub fn ask() -> Option<Choice> {
     let title = wide(&t("emilli_remove_title"));
-    let question = wide(&t("emilli_remove_question"));
-    let content = wide(&t("emilli_remove_content"));
-    let keep = wide(&t("emilli_remove_keep"));
-    let everything = wide(&t("emilli_remove_everything"));
-    let buttons = [
-        TaskDialogButton { id: ID_KEEP, text: keep.as_ptr() },
-        TaskDialogButton { id: ID_EVERYTHING, text: everything.as_ptr() },
-    ];
-    let f: Option<TaskDialogIndirect> = unsafe {
+    let f = task_dialog_fn();
+    let first = f.and_then(|f| {
+        show(f, &title, false, "emilli_remove_question", "emilli_remove_content", ("emilli_remove_keep", "emilli_remove_everything"), ID_KEEP)
+    });
+    let first = match first {
+        Some(first) => first,
+        None => {
+            // Without the task dialog: the same two windows with Windows' Yes / No / Cancel.
+            let first = from_yes_no(message_box(&title, "emilli_remove_fallback", false));
+            return decide(first, || from_yes_no(message_box(&title, "emilli_remove_warning_fallback", true)));
+        }
+    };
+    decide(first, || {
+        f.and_then(|f| {
+            show(
+                f,
+                &title,
+                true,
+                "emilli_remove_warning_question",
+                "emilli_remove_warning",
+                ("emilli_remove_warning_keep", "emilli_remove_warning_everything"),
+                WARNING_DEFAULT,
+            )
+        })
+        .unwrap_or_else(|| from_yes_no(message_box(&title, "emilli_remove_warning_fallback", true)))
+    })
+}
+
+/// Windows' Yes / No / Cancel with these words; Yes is the default. The warning has its icon.
+fn message_box(title: &[u16], key: &str, warning: bool) -> i32 {
+    use winapi::um::winuser::{MessageBoxW, MB_DEFBUTTON1, MB_ICONQUESTION, MB_ICONWARNING, MB_SETFOREGROUND, MB_YESNOCANCEL};
+    let body = wide(&t(key));
+    let icon = if warning { MB_ICONWARNING } else { MB_ICONQUESTION };
+    unsafe { MessageBoxW(std::ptr::null_mut(), body.as_ptr(), title.as_ptr(), MB_YESNOCANCEL | icon | MB_DEFBUTTON1 | MB_SETFOREGROUND) }
+}
+
+fn task_dialog_fn() -> Option<TaskDialogIndirect> {
+    unsafe {
         let module = LoadLibraryW(wide("comctl32.dll").as_ptr());
         if module.is_null() {
             None
@@ -285,65 +308,66 @@ pub fn ask() -> Option<Choice> {
                 Some(std::mem::transmute::<*mut std::ffi::c_void, TaskDialogIndirect>(p))
             }
         }
-    };
-    if let Some(f) = f {
-        const TDF_ALLOW_DIALOG_CANCELLATION: i32 = 0x0008;
-        const TDF_USE_COMMAND_LINKS: i32 = 0x0010;
-        const TDCBF_CANCEL_BUTTON: i32 = 0x0008;
-        let config = TaskDialogConfig {
-            cb_size: std::mem::size_of::<TaskDialogConfig>() as u32,
-            hwnd_parent: 0,
-            h_instance: 0,
-            flags: TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS,
-            common_buttons: TDCBF_CANCEL_BUTTON,
-            window_title: title.as_ptr(),
-            main_icon: std::ptr::null(),
-            main_instruction: question.as_ptr(),
-            content: content.as_ptr(),
-            c_buttons: buttons.len() as u32,
-            buttons: buttons.as_ptr(),
-            default_button: ID_KEEP,
-            c_radio_buttons: 0,
-            radio_buttons: std::ptr::null(),
-            default_radio_button: 0,
-            verification_text: std::ptr::null(),
-            expanded_information: std::ptr::null(),
-            expanded_control_text: std::ptr::null(),
-            collapsed_control_text: std::ptr::null(),
-            footer_icon: std::ptr::null(),
-            footer: std::ptr::null(),
-            callback: std::ptr::null(),
-            callback_data: 0,
-            cx_width: 0,
-        };
-        let mut pressed = 0i32;
-        let hr = unsafe { f(&config, &mut pressed, std::ptr::null_mut(), std::ptr::null_mut()) };
-        if hr >= 0 {
-            return match pressed {
-                ID_KEEP => Some(Choice::Keep),
-                ID_EVERYTHING => Some(Choice::Everything),
-                _ => None,
-            };
-        }
-        log::warn!("the removal question could not be shown as a task dialog ({:#x})", hr);
     }
-    // Without the task dialog: the same question with Windows' Yes / No / Cancel.
-    use winapi::um::winuser::{MessageBoxW, MB_DEFBUTTON1, MB_ICONQUESTION, MB_SETFOREGROUND, MB_YESNOCANCEL};
-    let body = wide(&t("emilli_remove_fallback"));
-    let r = unsafe {
-        MessageBoxW(
-            std::ptr::null_mut(),
-            body.as_ptr(),
-            title.as_ptr(),
-            MB_YESNOCANCEL | MB_ICONQUESTION | MB_DEFBUTTON1 | MB_SETFOREGROUND,
-        )
+}
+
+/// One task dialog: two command links (keys of their words) and Cancel. The pressed button's id
+/// (IDCANCEL when cancelled or closed), or None when the dialog could not be shown.
+fn show(
+    f: TaskDialogIndirect,
+    title: &[u16],
+    warning: bool,
+    instruction: &str,
+    content: &str,
+    links: (&str, &str),
+    default: i32,
+) -> Option<i32> {
+    const TDF_ALLOW_DIALOG_CANCELLATION: i32 = 0x0008;
+    const TDF_USE_COMMAND_LINKS: i32 = 0x0010;
+    const TDCBF_CANCEL_BUTTON: i32 = 0x0008;
+    // TD_WARNING_ICON, MAKEINTRESOURCEW(-1).
+    const TD_WARNING_ICON: usize = 0xFFFF;
+    let instruction = wide(&t(instruction));
+    let content = wide(&t(content));
+    let keep = wide(&t(links.0));
+    let everything = wide(&t(links.1));
+    let buttons = [
+        TaskDialogButton { id: ID_KEEP, text: keep.as_ptr() },
+        TaskDialogButton { id: ID_EVERYTHING, text: everything.as_ptr() },
+    ];
+    let config = TaskDialogConfig {
+        cb_size: std::mem::size_of::<TaskDialogConfig>() as u32,
+        hwnd_parent: 0,
+        h_instance: 0,
+        flags: TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS,
+        common_buttons: TDCBF_CANCEL_BUTTON,
+        window_title: title.as_ptr(),
+        main_icon: if warning { TD_WARNING_ICON as *const u16 } else { std::ptr::null() },
+        main_instruction: instruction.as_ptr(),
+        content: content.as_ptr(),
+        c_buttons: buttons.len() as u32,
+        buttons: buttons.as_ptr(),
+        default_button: default,
+        c_radio_buttons: 0,
+        radio_buttons: std::ptr::null(),
+        default_radio_button: 0,
+        verification_text: std::ptr::null(),
+        expanded_information: std::ptr::null(),
+        expanded_control_text: std::ptr::null(),
+        collapsed_control_text: std::ptr::null(),
+        footer_icon: std::ptr::null(),
+        footer: std::ptr::null(),
+        callback: std::ptr::null(),
+        callback_data: 0,
+        cx_width: 0,
     };
-    match r {
-        IDYES => Some(Choice::Keep),
-        IDNO => Some(Choice::Everything),
-        IDCANCEL => None,
-        _ => None,
+    let mut pressed = IDCANCEL;
+    let hr = unsafe { f(&config, &mut pressed, std::ptr::null_mut(), std::ptr::null_mut()) };
+    if hr >= 0 {
+        return Some(pressed);
     }
+    log::warn!("the removal window could not be shown as a task dialog ({:#x})", hr);
+    None
 }
 
 #[cfg(test)]

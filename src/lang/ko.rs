@@ -853,8 +853,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_uac_not_installed_tip", "상대 PC에 Windows 확인 창이 떠 있어서 화면이 멈춘 것처럼 보입니다. 상대 PC에 Emilli Remote를 설치해야 시스템 창을 누를 수 있습니다. 그 PC 앞에 있는 분이 Emilli Remote 창(작업 표시줄에 있으면 눌러서 열기)에서 \"설치\"를 누르고, Windows 확인 창의 \"예\"를 한 번 눌러 주세요."),
         ("emilli_install_for_system_prompts", "이 PC에 설치해야 시스템 창을 누를 수 있습니다"),
         ("emilli_install_button", "설치"),
-        ("emilli_start_title", "Emilli Remote 시작하기"),
-        ("emilli_start_body", "이 PC를 내 계정에 넣으면, 같은 계정으로 로그인한 다른 PC가 '내 기기'에 나오고 한 번 눌러 열 수 있습니다. 처음이면 '가입', 계정이 있으면 '로그인'을 누르세요."),
+        ("emilli_start_title", "도움이 필요하면"),
+        ("emilli_start_body", "왼쪽의 ID와 일회용 비밀번호를 도와주는 사람에게 불러 주세요. 이 PC에 '수락' 창이 뜨면 '수락'을 누르세요."),
+        ("emilli_start_account", "이 PC를 내 계정에 넣어 계속 쓰려면: 처음이면 '가입', 계정이 있으면 '로그인'을 누르세요. 같은 계정의 다른 PC가 '내 기기'에 나옵니다."),
         ("emilli_signup", "가입"),
         ("emilli_signin", "로그인"),
         ("emilli_signup_title", "계정 만들기"),
@@ -911,5 +912,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_remove_everything", "모두 지우기\n이 PC에 아무것도 남기지 않고 계정의 '내 기기'에서도 뺍니다. 다시 설치하면 새 PC가 됩니다(새 번호, 로그아웃, 기본 설정)."),
         ("emilli_remove_fallback", "Emilli Remote를 이 PC에서 지웁니다. 이 PC의 설정을 남길까요?\n\n예: 설정 남기기. 다시 설치하면 같은 PC로 이어집니다.\n아니요: 모두 지우기. 아무것도 남기지 않고 계정의 '내 기기'에서도 뺍니다. 다시 설치하면 새 PC가 됩니다.\n취소: 지우지 않습니다."),
         ("emilli_remove_unreachable", "계정 서버에 닿지 못해 이 PC(번호 {})가 '내 기기'에 남을 수 있으니, 관리자 페이지 '기기'에서 이 번호를 '주인 없음 (풀기)'로 바꿔 목록에서 빼 주세요."),
+        ("emilli_remove_warning_question", "정말 모두 지울까요?"),
+        ("emilli_remove_warning", "모두 지우면 되돌릴 수 없습니다.\n\n• 이 PC의 로그인과 계정 연결이 지워집니다.\n• 계정의 '내 기기' 목록에서 이 PC가 빠집니다.\n• 다시 설치하면 새 번호를 받은 새 PC가 됩니다."),
+        ("emilli_remove_warning_keep", "설정 남기기 (권장)\n프로그램만 지우고 번호, 계정, 설정은 남깁니다."),
+        ("emilli_remove_warning_everything", "모두 지우기\n위 내용대로 이 PC에서 모두 지웁니다."),
+        ("emilli_remove_warning_fallback", "정말 모두 지울까요? 되돌릴 수 없습니다.\n\n- 이 PC의 로그인과 계정 연결이 지워집니다.\n- 계정의 '내 기기' 목록에서 이 PC가 빠집니다.\n- 다시 설치하면 새 번호를 받은 새 PC가 됩니다.\n\n예: 설정 남기기 (권장). 프로그램만 지웁니다.\n아니요: 모두 지우기.\n취소: 지우지 않습니다."),
     ].iter().cloned().collect();
 }

@@ -56,7 +56,13 @@ Widget emilliStartCard(BuildContext context) {
               style: theme.textTheme.bodyMedium
                   ?.copyWith(color: Colors.red.shade700)),
         ],
-        const SizedBox(height: 18),
+        // REMOTE-UX-1 (1B): help now first; the account (sign up, sign in) in one smaller line
+        // above its two buttons, which stay as they were.
+        const SizedBox(height: 14),
+        Text(translate('emilli_start_account'),
+            key: const ValueKey('emilli-start-account'),
+            style: theme.textTheme.bodySmall),
+        const SizedBox(height: 10),
         Row(
           children: [
             ElevatedButton(

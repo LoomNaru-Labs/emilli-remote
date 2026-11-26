@@ -22,3 +22,14 @@ pub mod policy;
 /// REMOTE-UX-1: the helper's automatic picture fix (src/client/heal.rs), pure decisions with a virtual clock.
 #[path = "../../../src/client/heal.rs"]
 pub mod heal;
+
+/// REMOTE-UX-1: what the removal's answers mean ("remove everything" only after its warning, whose
+/// default keeps the settings), from src/emilli_removal/choice.rs.
+#[path = "../../../src/emilli_removal/choice.rs"]
+pub mod removal_choice;
+
+/// The program's Korean and English words (src/lang), for the checks of the removal warning.
+#[path = "../../../src/lang/ko.rs"]
+pub mod ko;
+#[path = "../../../src/lang/en.rs"]
+pub mod en;

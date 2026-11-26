@@ -320,8 +320,9 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_install_for_system_prompts", "System windows can be clicked only when Emilli Remote is installed on this PC."),
         ("emilli_install_button", "Install"),
         ("Accessible devices", "My devices"),
-        ("emilli_start_title", "Get started with Emilli Remote"),
-        ("emilli_start_body", "Add this PC to your account. Your other PCs signed in to the same account then appear under 'My devices' and open with one click. New here? Press 'Sign up'. Have an account? Press 'Sign in'."),
+        ("emilli_start_title", "Need help?"),
+        ("emilli_start_body", "Read the ID and one-time password on the left to the person helping you. If a window with 'Accept' appears on this PC, press 'Accept'."),
+        ("emilli_start_account", "To keep this PC in your account: press 'Sign up' the first time, or 'Sign in' if you have an account. Your other PCs in the same account appear under 'My devices'."),
         ("emilli_signup", "Sign up"),
         ("emilli_signin", "Sign in"),
         ("emilli_signup_title", "Create an account"),
@@ -374,5 +375,10 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("emilli_remove_everything", "Remove everything\nNothing is left on this PC and it leaves the account's My devices. A later install is a new PC (new number, signed out, default settings)."),
         ("emilli_remove_fallback", "Emilli Remote will be removed from this PC. Keep this PC's settings?\n\nYes: keep settings. A later install continues as the same PC.\nNo: remove everything. Nothing is left and it leaves the account's My devices. A later install is a new PC.\nCancel: nothing is removed."),
         ("emilli_remove_unreachable", "The account server could not be reached, so this PC (number {}) may stay in My devices; to take it off the list, set this number to no owner under Devices in the admin page."),
+        ("emilli_remove_warning_question", "Remove everything?"),
+        ("emilli_remove_warning", "This cannot be undone.\n\n• This PC's sign-in and its link to the account are deleted.\n• This PC leaves the account's My devices list.\n• A later install is a new PC with a new number."),
+        ("emilli_remove_warning_keep", "Keep settings (recommended)\nOnly the program is removed; the number, account and settings stay."),
+        ("emilli_remove_warning_everything", "Remove everything\nRemove it all from this PC, as described above."),
+        ("emilli_remove_warning_fallback", "Remove everything? This cannot be undone.\n\n- This PC's sign-in and its link to the account are deleted.\n- This PC leaves the account's My devices list.\n- A later install is a new PC with a new number.\n\nYes: keep settings (recommended). Only the program is removed.\nNo: remove everything.\nCancel: nothing is removed."),
     ].iter().cloned().collect();
 }
