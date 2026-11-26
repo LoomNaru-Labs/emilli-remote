@@ -124,6 +124,7 @@ const
 var
   PcId: String;
   InstallError: String;
+  AppStarted: Boolean;
 
 function WaitNamedPipe(Name: String; TimeOut: Cardinal): Integer;
   external 'WaitNamedPipeW@kernel32.dll stdcall';
@@ -426,6 +427,13 @@ begin
   Result := False;
   if (PageID = wpFinished) and (InstallError = '') and not WizardSilent then
   begin
+    { Inno may ask more than once: the app is started once. }
+    if AppStarted then
+    begin
+      Result := True;
+      Exit;
+    end;
+    AppStarted := True;
     if ExecAsOriginalUser(InstalledExe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode) then
       Log('Emilli: the app started, the last page skipped')
     else
