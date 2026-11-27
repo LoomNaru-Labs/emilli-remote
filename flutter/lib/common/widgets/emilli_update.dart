@@ -120,6 +120,10 @@ Future<void> emilliShowUpdateResult() async {
   if (r is! Map || r['shown'] == 1) return;
   final text = emilliUpdateResultText(r, (s['current'] ?? '').toString());
   if (text == null) return;
+  // Consume the version-matched notice before drawing it.  The window may be closed while the
+  // dialog is open; leaving the acknowledgement until after close let an older version display
+  // this result after a later downgrade, because that older executable cannot know this check.
+  await emilliUpdate('ack');
   await gFFI.dialogManager.show<bool>((setState, close, context) {
     return CustomAlertDialog(
       title: Text(translate('emilli_update_title')),
@@ -129,7 +133,6 @@ Future<void> emilliShowUpdateResult() async {
       onCancel: () => close(true),
     );
   });
-  await emilliUpdate('ack');
 }
 
 /// Settings > About: version check, the one press, and the automatic switch.

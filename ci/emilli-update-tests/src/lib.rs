@@ -47,6 +47,28 @@ mod ux2_contracts {
     use super::{en, ko};
 
     #[test]
+    fn matching_update_notice_is_consumed_before_its_dialog_is_drawn() {
+        let source = include_str!("../../../flutter/lib/common/widgets/emilli_update.dart");
+        let show = source
+            .split("Future<void> emilliShowUpdateResult()")
+            .nth(1)
+            .expect("update result display function")
+            .split("/// Settings > About")
+            .next()
+            .expect("end of update result display function");
+        let acknowledge = show
+            .find("await emilliUpdate('ack');")
+            .expect("notice acknowledgement");
+        let dialog = show
+            .find("await gFFI.dialogManager.show<bool>")
+            .expect("notice dialog");
+        assert!(
+            acknowledge < dialog,
+            "a window closed during the dialog must not leave its notice for an older version"
+        );
+    }
+
+    #[test]
     fn store_reachable_removal_entries_never_use_the_technician_switch() {
         let source = include_str!("../../../src/platform/windows.rs");
         assert!(source.contains("shortcut_bytes(&exe, Some(\"--uninstall\")"));
