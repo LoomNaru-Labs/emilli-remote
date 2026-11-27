@@ -76,9 +76,10 @@ CreateAppDir=no
 ; The program registers its own entry "Emilli Remote" in Windows' installed apps; Setup adds none.
 Uninstallable=no
 DisableWelcomePage=yes
-; REMOTE-UX-1: no page before installing (Windows has already asked "allow changes" when the
-; Setup starts; the page only said to press Install), and on success no last page either: the
-; app opens by itself (ShouldSkipPage). A failure still ends on the last page with its message.
+; REMOTE-UX-1: nothing to press before installing (Windows has already asked "allow changes" when
+; the Setup starts; the page only said to press Install): Inno still shows the Ready page here, so
+; it presses its own Install as it opens (CurPageChanged). On success no last page either: the app
+; opens by itself (ShouldSkipPage). A failure still ends on the last page with its message.
 DisableReadyPage=yes
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
@@ -120,6 +121,8 @@ const
   ApiUrl = '{#ApiUrl}';
   IpcPipe = '\\.\pipe\EmilliRemote\query';
   FailExitCode = 10;
+  { Windows' message that presses a button (the Ready page's Install, see CurPageChanged). }
+  BM_CLICK = $00F5;
 
 var
   PcId: String;
@@ -425,14 +428,6 @@ var
   ResultCode: Integer;
 begin
   Result := False;
-  { No page before installing: DisableReadyPage alone does not do it, because Inno shows the Ready
-    page anyway when no page came before it (laptop walk of 2026-11-26 20:49Z: the page with
-    "Install" was still there). Skipped here, the install starts as the wizard opens. }
-  if PageID = wpReady then
-  begin
-    Result := True;
-    Exit;
-  end;
   if (PageID = wpFinished) and (InstallError = '') and not WizardSilent then
   begin
     { Inno may ask more than once: the app is started once. }
@@ -452,6 +447,12 @@ end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
+  { No page to press before installing: Inno shows the Ready page even with DisableReadyPage when
+    no page came before it, and does not let ShouldSkipPage skip it either (laptop walks of
+    2026-11-26 20:49Z and 2026-11-27 01:38Z). So the page presses its own Install button as it
+    opens; Windows has already asked "allow changes" when the Setup started. }
+  if (CurPageID = wpReady) and not WizardSilent then
+    PostMessage(WizardForm.NextButton.Handle, BM_CLICK, 0, 0);
   if CurPageID = wpReady then
   begin
     WizardForm.PageNameLabel.Caption := 'Emilli Remote 설치  /  Emilli Remote Setup';
