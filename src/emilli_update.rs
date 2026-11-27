@@ -30,6 +30,7 @@
 //!   itself, and no second update starts while one is being tried.
 
 pub mod policy;
+pub mod result_notice;
 pub mod verify;
 
 #[allow(unused_imports)]
@@ -76,17 +77,27 @@ pub fn note_registered() {
 
 /// Registered with the ID server the way a working install is (policy.rs).
 pub fn registered() -> bool {
-    policy::is_registered(Config::get_key_confirmed(), LAST_REGISTERED.load(Ordering::Relaxed), now())
+    policy::is_registered(
+        Config::get_key_confirmed(),
+        LAST_REGISTERED.load(Ordering::Relaxed),
+        now(),
+    )
 }
 
 /// The ID server this PC registers with, as host:port (the helper checks it can reach it).
 fn id_server() -> String {
-    crate::check_port(Config::get_rendezvous_server(), hbb_common::config::RENDEZVOUS_PORT)
+    crate::check_port(
+        Config::get_rendezvous_server(),
+        hbb_common::config::RENDEZVOUS_PORT,
+    )
 }
 
 /// The update folder and key of this build, or None (no updater in this build).
 pub fn config() -> Option<(&'static str, [u8; 32])> {
-    config_of(option_env!("EMILLI_UPDATE_URL")?, option_env!("EMILLI_UPDATE_KEY")?)
+    config_of(
+        option_env!("EMILLI_UPDATE_URL")?,
+        option_env!("EMILLI_UPDATE_KEY")?,
+    )
 }
 
 fn config_of(url: &'static str, key: &str) -> Option<(&'static str, [u8; 32])> {
@@ -133,7 +144,8 @@ fn auto_on() -> bool {
 }
 
 fn trial_active() -> bool {
-    let text = updater_dir().and_then(|d| std::fs::read_to_string(d.join("work").join(TRIAL_FILE)).ok());
+    let text =
+        updater_dir().and_then(|d| std::fs::read_to_string(d.join("work").join(TRIAL_FILE)).ok());
     policy::trial_active(text.as_deref(), now())
 }
 
@@ -192,8 +204,10 @@ pub fn handle_ipc(request: &str) -> String {
             }
             "ack" => {
                 if let Some(mut r) = read_result() {
-                    r["shown"] = json!(1);
-                    write_result(&r);
+                    if result_notice::belongs_to_running(&r, crate::VERSION) {
+                        r["shown"] = json!(1);
+                        write_result(&r);
+                    }
                 }
             }
             _ => {}
@@ -215,6 +229,7 @@ pub fn state_json() -> String {
     }
     let offer = s.offer.clone();
     let trial = trial_active();
+    let result = read_result().filter(|r| result_notice::belongs_to_running(r, crate::VERSION));
     json!({
         "configured": config().is_some(),
         "installed": crate::platform::is_installed(),
@@ -229,7 +244,7 @@ pub fn state_json() -> String {
         "checked_at": s.checked_at,
         "auto": auto_on(),
         "auto_waiting": s.auto_waiting,
-        "result": read_result(),
+        "result": result,
         "registered": registered(),
         "trial": trial,
         "skipped": skipped(),
@@ -322,7 +337,11 @@ fn check() -> Result<Option<verify::Offer>, String> {
     match verify::verify(&bytes, &key, PLATFORM, crate::VERSION) {
         Ok(offer) => Ok(Some(offer)),
         Err(verify::Refusal::NotNewer(v)) => {
-            log::info!("update check: the offered {} is not newer than {}", v, crate::VERSION);
+            log::info!(
+                "update check: the offered {} is not newer than {}",
+                v,
+                crate::VERSION
+            );
             Ok(None)
         }
         Err(r) => Err(r.code().to_owned()),
@@ -394,7 +413,11 @@ fn download(url: &str, dest: &std::path::Path, max: u64) -> hbb_common::ResultTy
     file.sync_all()?;
     drop(file);
     std::fs::rename(&part, dest)?;
-    let hex: String = hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect();
+    let hex: String = hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
     Ok((total, hex))
 }
 
@@ -426,11 +449,20 @@ fn install(offer: &verify::Offer, reopen: bool) -> Result<(), String> {
         "unreachable".to_owned()
     })?;
     if let Err(r) = verify::check_download(offer, size, &sha) {
-        log::error!("downloaded Setup refused: {} (size {}, SHA-256 {})", r.code(), size, sha);
+        log::error!(
+            "downloaded Setup refused: {} (size {}, SHA-256 {})",
+            r.code(),
+            size,
+            sha
+        );
         std::fs::remove_file(&setup).ok();
         return Err(r.code().to_owned());
     }
-    log::info!("Setup {} downloaded and checked (SHA-256 {})", offer.file, sha);
+    log::info!(
+        "Setup {} downloaded and checked (SHA-256 {})",
+        offer.file,
+        sha
+    );
     {
         let mut s = STATE.lock().unwrap();
         s.busy = "installing";
@@ -477,7 +509,13 @@ fn launch_helper(script: &std::path::Path, args: &[String]) -> Result<(), String
     let ps = PathBuf::from(root).join("System32\\WindowsPowerShell\\v1.0\\powershell.exe");
     let run = |flags: u32| {
         std::process::Command::new(&ps)
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+            ])
             .arg(script)
             .args(args)
             .creation_flags(flags)
@@ -531,7 +569,13 @@ fn scheduled_check() -> Duration {
         use hbb_common::rand::Rng;
         Duration::from_secs(policy::daily_delay(hbb_common::rand::thread_rng().gen()))
     };
-    let offered = STATE.lock().unwrap().offer.as_ref().map(|o| o.version.clone()).unwrap_or_default();
+    let offered = STATE
+        .lock()
+        .unwrap()
+        .offer
+        .as_ref()
+        .map(|o| o.version.clone())
+        .unwrap_or_default();
     let trial = trial_active();
     let skip = skipped();
     if !policy::auto_install_allowed(&Config::get_option(OPTION_AUTO), &offered, &skip, trial) {
@@ -541,7 +585,10 @@ fn scheduled_check() -> Duration {
             return RETRY;
         }
         if !offered.is_empty() && offered == skip {
-            log::info!("automatic update: {} was put back before, not installed again by itself", offered);
+            log::info!(
+                "automatic update: {} was put back before, not installed again by itself",
+                offered
+            );
         }
         return day();
     }
@@ -561,7 +608,16 @@ fn scheduled_check() -> Duration {
 fn reopen_after_update() {
     for _ in 0..240 {
         if let Some(mut r) = read_result() {
-            let fresh = r["at"].as_i64().map(|at| now() - at < 30 * 60).unwrap_or(false);
+            if !result_notice::belongs_to_running(&r, crate::VERSION) {
+                log::info!(
+                    "stale update result does not belong to running version; window stays closed"
+                );
+                return;
+            }
+            let fresh = r["at"]
+                .as_i64()
+                .map(|at| now() - at < 30 * 60)
+                .unwrap_or(false);
             let wanted = r["reopen"].as_i64() == Some(1) && r["reopened"].as_i64() != Some(1);
             if !(fresh && wanted) {
                 return;
@@ -596,7 +652,8 @@ pub async fn ask_service(request: String) -> String {
             .await
             .is_ok()
         {
-            if let Ok(Some(crate::ipc::Data::EmilliUpdate(answer))) = conn.next_timeout(3000).await {
+            if let Ok(Some(crate::ipc::Data::EmilliUpdate(answer))) = conn.next_timeout(3000).await
+            {
                 return answer;
             }
         }

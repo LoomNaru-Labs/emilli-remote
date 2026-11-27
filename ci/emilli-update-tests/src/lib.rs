@@ -19,6 +19,10 @@ pub mod verify;
 #[path = "../../../src/emilli_update/policy.rs"]
 pub mod policy;
 
+/// REMOTE-UX-2: stale update results never reach a window for another running version.
+#[path = "../../../src/emilli_update/result_notice.rs"]
+pub mod result_notice;
+
 /// REMOTE-UX-1: the helper's automatic picture fix (src/client/heal.rs), pure decisions with a virtual clock.
 #[path = "../../../src/client/heal.rs"]
 pub mod heal;
@@ -28,8 +32,81 @@ pub mod heal;
 #[path = "../../../src/emilli_removal/choice.rs"]
 pub mod removal_choice;
 
+/// REMOTE-UX-2: local identity deletion is gated on the account service's answer.
+#[path = "../../../src/emilli_removal/policy.rs"]
+pub mod removal_policy;
+
+#[path = "../../../src/lang/en.rs"]
+pub mod en;
 /// The program's Korean and English words (src/lang), for the checks of the removal warning.
 #[path = "../../../src/lang/ko.rs"]
 pub mod ko;
-#[path = "../../../src/lang/en.rs"]
-pub mod en;
+
+#[cfg(test)]
+mod ux2_contracts {
+    use super::{en, ko};
+
+    #[test]
+    fn store_reachable_removal_entries_never_use_the_technician_switch() {
+        let source = include_str!("../../../src/platform/windows.rs");
+        assert!(source.contains("shortcut_bytes(&exe, Some(\"--uninstall\")"));
+        let installed_apps = source
+            .lines()
+            .find(|line| line.contains("UninstallString /t REG_SZ"))
+            .expect("Installed apps removal entry");
+        assert!(installed_apps.contains("--uninstall"));
+        for line in source
+            .lines()
+            .filter(|line| line.contains("UninstallString") || line.contains("uninstall_shortcut"))
+        {
+            assert!(
+                !line.contains("--remove-everything"),
+                "store-reachable entry bypasses the warning: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn every_removal_window_has_named_english_and_korean_actions() {
+        for words in [&*en::T, &*ko::T] {
+            for key in [
+                "emilli_remove_keep_short",
+                "emilli_remove_everything_short",
+                "emilli_remove_local_only",
+                "emilli_remove_unreachable_question",
+                "emilli_remove_unreachable_content",
+                "emilli_remove_local_only_done",
+            ] {
+                assert!(
+                    !words.get(key).copied().unwrap_or_default().is_empty(),
+                    "missing {key}"
+                );
+            }
+        }
+        assert_eq!(ko::T.get("Cancel"), Some(&"취소"));
+        assert_eq!(
+            en::T.get("emilli_remove_local_only"),
+            Some(&"Remove from this PC only")
+        );
+        assert_eq!(
+            ko::T.get("emilli_remove_local_only"),
+            Some(&"이 PC에서만 제거")
+        );
+        assert_eq!(
+            en::T.get("Request access to your device"),
+            Some(&"Requesting access to this PC")
+        );
+        assert_eq!(
+            ko::T.get("Request access to your device"),
+            Some(&"이 PC에 연결을 요청하고 있습니다")
+        );
+        assert_eq!(
+            en::T.get("display_is_plugged_out_msg"),
+            Some(&"The display you were viewing was unplugged; switching to the main display.")
+        );
+        assert_eq!(
+            ko::T.get("display_is_plugged_out_msg"),
+            Some(&"보던 디스플레이가 분리되어 주 디스플레이로 전환합니다.")
+        );
+    }
+}

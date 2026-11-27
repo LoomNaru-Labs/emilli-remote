@@ -226,7 +226,12 @@ impl Heal {
             self.probes.pop_front();
         }
         self.lows.push_back((now, delay_ms));
-        while self.lows.front().map(|l| now.saturating_sub(l.0) > 120_000).unwrap_or(false) {
+        while self
+            .lows
+            .front()
+            .map(|l| now.saturating_sub(l.0) > 120_000)
+            .unwrap_or(false)
+        {
             self.lows.pop_front();
         }
         if delay_ms >= 2000 {
@@ -275,7 +280,12 @@ impl Heal {
         if now.saturating_sub(self.last_change) < HOLD && self.last_change > 0 {
             return false;
         }
-        while self.changes.front().map(|c| now.saturating_sub(c.0) > CAP_WINDOW).unwrap_or(false) {
+        while self
+            .changes
+            .front()
+            .map(|c| now.saturating_sub(c.0) > CAP_WINDOW)
+            .unwrap_or(false)
+        {
             self.changes.pop_front();
         }
         let all = self.changes.len();
@@ -305,21 +315,37 @@ impl Heal {
         if sp >= 3000 {
             self.frozen_episode(now);
         }
-        while self.frozen_starts.front().map(|s| now.saturating_sub(*s) > 120_000).unwrap_or(false) {
+        while self
+            .frozen_starts
+            .front()
+            .map(|s| now.saturating_sub(*s) > 120_000)
+            .unwrap_or(false)
+        {
             self.frozen_starts.pop_front();
         }
         let base = t.base_kbps as f32 * hw_factor(t.codec, t.base_kbps);
-        self.r = if base > 0.0 { self.target_kbps as f32 / base } else { 0.0 };
+        self.r = if base > 0.0 {
+            self.target_kbps as f32 / base
+        } else {
+            0.0
+        };
         let lag_line = std::cmp::max(400, self.d0 + 250);
         let good_line = std::cmp::max(250, self.d0 + 100);
         let probes_known = !self.probes.is_empty();
         let frozen_now = self.frozen_since.is_some();
         let frozen = frozen_now
             && (self.frozen_starts.len() >= 2
-                || self.frozen_since.map(|s| now.saturating_sub(s) >= 5000).unwrap_or(false));
+                || self
+                    .frozen_since
+                    .map(|s| now.saturating_sub(s) >= 5000)
+                    .unwrap_or(false));
         let settled = now.saturating_sub(self.last_change) >= SETTLE || self.last_change == 0;
         let judged = settled && now.saturating_sub(self.started) >= SETTLE;
-        let laggy_n = if judged { Self::push(&mut self.laggy, probes_known && self.d5 >= lag_line) } else { 0 };
+        let laggy_n = if judged {
+            Self::push(&mut self.laggy, probes_known && self.d5 >= lag_line)
+        } else {
+            0
+        };
         let healthy = probes_known && !frozen_now && self.d5 <= good_line;
         let blur_now = t.base_kbps > 0
             && self.target_kbps > 0
@@ -327,14 +353,21 @@ impl Heal {
             && now.saturating_sub(self.last_key) >= 15_000
             && !frozen_now
             && self.d5 < lag_line;
-        let blurry_n = if judged { Self::push(&mut self.blurry, blur_now) } else { 0 };
+        let blurry_n = if judged {
+            Self::push(&mut self.blurry, blur_now)
+        } else {
+            0
+        };
         if healthy {
             self.healthy_since.get_or_insert(now);
         } else {
             self.healthy_since = None;
         }
         let stuck_now = healthy
-            && self.healthy_since.map(|s| now.saturating_sub(s) >= 20_000).unwrap_or(false)
+            && self
+                .healthy_since
+                .map(|s| now.saturating_sub(s) >= 20_000)
+                .unwrap_or(false)
             && t.base_kbps > 0
             && self.target_kbps > 0
             && self.r <= 0.8 * t.quality_ratio
@@ -350,7 +383,10 @@ impl Heal {
 
         // A fresh picture is the cheapest step; while it cannot be sent again (once a minute) a
         // picture that stays blurry gets the next step.
-        let resharpen_due = self.last_resharpen.map(|r| now.saturating_sub(r) >= 60_000).unwrap_or(true);
+        let resharpen_due = self
+            .last_resharpen
+            .map(|r| now.saturating_sub(r) >= 60_000)
+            .unwrap_or(true);
         self.state = if frozen {
             State::Frozen
         } else if laggy_n >= IN_WINDOW {
@@ -445,7 +481,10 @@ impl Heal {
             }
             State::Ok => {
                 let ok_for = self.ok_since.map(|s| now.saturating_sub(s)).unwrap_or(0);
-                if self.mode != Mode::Normal && ok_for >= self.need_ok_mode && self.can_change(now, false) {
+                if self.mode != Mode::Normal
+                    && ok_for >= self.need_ok_mode
+                    && self.can_change(now, false)
+                {
                     let from = self.mode;
                     let a = self.set_mode(now, Mode::Normal);
                     self.undone_mode = Some((from, now));
@@ -455,7 +494,6 @@ impl Heal {
                 if self.mode == Mode::Normal
                     && self.av1
                     && ok_for >= self.need_ok_codec
-                    && self.r >= 1.3 * blurry_limit(self.codec_before)
                     && self.can_change(now, true)
                 {
                     self.av1 = false;
@@ -511,7 +549,9 @@ impl Heal {
         }
         if let Some((key, at)) = self.shown {
             let lasting = matches!(key, "emilli_heal_av1" | "emilli_heal_frozen");
-            if now.saturating_sub(at) <= SHOW_AFTER || (lasting && (self.av1 || self.state == State::Frozen)) {
+            if now.saturating_sub(at) <= SHOW_AFTER
+                || (lasting && (self.av1 || self.state == State::Frozen))
+            {
                 return Some(key);
             }
         }
@@ -553,24 +593,48 @@ mod tests {
         h: Heal,
         now: u64,
         codec: Codec,
+        home_codec: Codec,
         quality: f32,
+        home_quality: f32,
+        fps: u32,
+        home_fps: u32,
         av1_offered: bool,
         actions: Vec<(u64, Action)>,
     }
 
     impl Sim {
         fn new(pins: Pins) -> Self {
-            Sim { h: Heal::new(0, pins), now: 0, codec: Codec::Vp9, quality: 0.67, av1_offered: true, actions: vec![] }
+            Sim {
+                h: Heal::new(0, pins),
+                now: 0,
+                codec: Codec::Vp9,
+                home_codec: Codec::Vp9,
+                quality: 0.67,
+                home_quality: 0.67,
+                fps: 30,
+                home_fps: 30,
+                av1_offered: true,
+                actions: vec![],
+            }
         }
         /// Seconds of one line: probe delay and the encoder's target ratio, one probe a second.
         fn run(&mut self, secs: u64, delay: u32, ratio: f32) {
-            self.run_with(secs, delay, ratio, 20, false);
+            self.run_with(secs, delay, ratio, self.fps, false);
         }
         fn run_with(&mut self, secs: u64, delay: u32, ratio: f32, fps: u32, input: bool) {
             for _ in 0..secs {
                 self.now += 1000;
-                self.h.on_probe(self.now, delay, (ratio * BASE as f32) as u32);
-                let t = Tick { now: self.now, fps, codec: self.codec, base_kbps: BASE, quality_ratio: self.quality, av1_offered: self.av1_offered, input };
+                self.h
+                    .on_probe(self.now, delay, (ratio * BASE as f32) as u32);
+                let t = Tick {
+                    now: self.now,
+                    fps,
+                    codec: self.codec,
+                    base_kbps: BASE,
+                    quality_ratio: self.quality,
+                    av1_offered: self.av1_offered,
+                    input,
+                };
                 if let Some(a) = self.h.tick(&t) {
                     self.actions.push((self.now, a));
                     // a codec change and a refresh each bring a full frame
@@ -579,10 +643,19 @@ mod tests {
                     }
                     match a {
                         Action::SetAv1(true) => self.codec = Codec::Av1,
-                        Action::SetAv1(false) => self.codec = Codec::Vp9,
-                        Action::SetMode(Mode::Slow) => self.quality = 0.5,
-                        Action::SetMode(Mode::Sharp) => self.quality = 1.5,
-                        Action::SetMode(Mode::Normal) => self.quality = 0.67,
+                        Action::SetAv1(false) => self.codec = self.home_codec,
+                        Action::SetMode(Mode::Slow) => {
+                            self.quality = 0.5;
+                            self.fps = 10;
+                        }
+                        Action::SetMode(Mode::Sharp) => {
+                            self.quality = 1.5;
+                            self.fps = 10;
+                        }
+                        Action::SetMode(Mode::Normal) => {
+                            self.quality = self.home_quality;
+                            self.fps = self.home_fps;
+                        }
                         Action::Resharpen => {}
                     }
                 }
@@ -592,7 +665,15 @@ mod tests {
         fn stall(&mut self, secs: u64) {
             for _ in 0..secs {
                 self.now += 1000;
-                let t = Tick { now: self.now, fps: 0, codec: self.codec, base_kbps: BASE, quality_ratio: self.quality, av1_offered: self.av1_offered, input: false };
+                let t = Tick {
+                    now: self.now,
+                    fps: 0,
+                    codec: self.codec,
+                    base_kbps: BASE,
+                    quality_ratio: self.quality,
+                    av1_offered: self.av1_offered,
+                    input: false,
+                };
                 if let Some(a) = self.h.tick(&t) {
                     self.actions.push((self.now, a));
                 }
@@ -615,10 +696,19 @@ mod tests {
         s.run(60, 700, 0.34);
         let first = s.actions.first().copied().expect("a step on the slow line");
         assert_eq!(first.1, Action::SetMode(Mode::Slow));
-        assert!(first.0 - 30_000 <= 20_000, "step after {} ms", first.0 - 30_000);
+        assert!(
+            first.0 - 30_000 <= 20_000,
+            "step after {} ms",
+            first.0 - 30_000
+        );
         let before = s.actions.len();
         s.run(59, 40, 0.67);
-        assert_eq!(s.actions.len(), before, "nothing back within the first minute: {:?}", s.actions);
+        assert_eq!(
+            s.actions.len(),
+            before,
+            "nothing back within the first minute: {:?}",
+            s.actions
+        );
         s.run(15, 40, 0.67);
         assert_eq!(s.actions.last().unwrap().1, Action::SetMode(Mode::Normal));
     }
@@ -634,9 +724,237 @@ mod tests {
         // two the 320 ms are the line's own round trip and the low budget reads as stuck low)
         s.run(60, 320, 0.30);
         assert_eq!(s.actions.len(), 1, "{:?}", s.actions);
-        // the budget comes back: AV1 is taken back after a good minute (0.67 >= 1.3 x 0.50)
+        // the line clears: AV1 is taken back after a good minute, independently of the starting
+        // codec's old bitrate threshold. The helper's own codec preference is the destination.
         s.run(70, 40, 0.67);
         assert_eq!(s.actions.last().unwrap().1, Action::SetAv1(false));
+    }
+
+    // The four restoration tables below deliberately use exhaustive matches. Adding a codec, mode,
+    // quality kind or fps kind without adding its restoration row makes this test source fail to
+    // compile instead of silently losing coverage.
+    fn every_codec() -> [Codec; 6] {
+        [
+            Codec::Vp8,
+            Codec::Vp9,
+            Codec::Av1,
+            Codec::H264,
+            Codec::H265,
+            Codec::Other,
+        ]
+    }
+
+    fn codec_name(c: Codec) -> &'static str {
+        match c {
+            Codec::Vp8 => "vp8",
+            Codec::Vp9 => "vp9",
+            Codec::Av1 => "av1",
+            Codec::H264 => "h264",
+            Codec::H265 => "h265",
+            Codec::Other => "other",
+        }
+    }
+
+    #[test]
+    fn restore_table_every_starting_codec_change_clear_return() {
+        for home in every_codec() {
+            let mut s = Sim::new(Pins::default());
+            s.codec = home;
+            s.home_codec = home;
+            if home != Codec::Av1 {
+                s.run(20, 40, 0.67);
+                for _ in 0..30 {
+                    s.run(1, 320, 0.10);
+                    if s.actions.iter().any(|a| a.1 == Action::SetAv1(true)) {
+                        break;
+                    }
+                }
+                assert!(
+                    s.actions.iter().any(|a| a.1 == Action::SetAv1(true)),
+                    "{} did not change: {:?}",
+                    codec_name(home),
+                    s.actions
+                );
+                s.run(75, 40, 0.67);
+                assert_eq!(
+                    s.actions.last().map(|a| a.1),
+                    Some(Action::SetAv1(false)),
+                    "{} did not return: {:?}",
+                    codec_name(home),
+                    s.actions
+                );
+                assert_eq!(s.codec, home, "{} did not restore", codec_name(home));
+            } else {
+                s.run(125, 40, 0.67);
+                assert!(
+                    s.actions.is_empty(),
+                    "AV1 starts and stays at home: {:?}",
+                    s.actions
+                );
+                assert_eq!(s.codec, home);
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum StartingQuality {
+        Balanced,
+        Best,
+        Low,
+        Custom,
+    }
+
+    fn quality_row(q: StartingQuality) -> (f32, bool, &'static str) {
+        match q {
+            StartingQuality::Balanced => (0.67, false, "balanced"),
+            StartingQuality::Best => (1.5, true, "best"),
+            StartingQuality::Low => (0.5, true, "low"),
+            StartingQuality::Custom => (0.82, true, "custom"),
+        }
+    }
+
+    #[test]
+    fn restore_table_every_starting_quality_change_clear_return() {
+        let rows = [
+            StartingQuality::Balanced,
+            StartingQuality::Best,
+            StartingQuality::Low,
+            StartingQuality::Custom,
+        ];
+        for row in rows {
+            let (home, pinned, name) = quality_row(row);
+            let mut s = Sim::new(Pins {
+                quality: pinned,
+                ..Pins::default()
+            });
+            s.quality = home;
+            s.home_quality = home;
+            s.av1_offered = false;
+            s.run(20, 40, home);
+            s.run(40, 900, 0.30);
+            if pinned {
+                assert!(
+                    s.actions.is_empty(),
+                    "pinned {} changed: {:?}",
+                    name,
+                    s.actions
+                );
+                assert_eq!(s.quality, home, "pinned {} did not stay home", name);
+            } else {
+                assert!(
+                    s.actions.iter().any(|a| a.1 == Action::SetMode(Mode::Slow)),
+                    "{} did not change: {:?}",
+                    name,
+                    s.actions
+                );
+                s.run(75, 40, home);
+                assert_eq!(
+                    s.actions.last().map(|a| a.1),
+                    Some(Action::SetMode(Mode::Normal)),
+                    "{} did not return: {:?}",
+                    name,
+                    s.actions
+                );
+                assert_eq!(s.quality, home, "{} did not restore", name);
+            }
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum StartingFps {
+        Default30,
+        Custom7,
+    }
+
+    fn fps_row(fps: StartingFps) -> (u32, bool, &'static str) {
+        match fps {
+            StartingFps::Default30 => (30, false, "default 30"),
+            StartingFps::Custom7 => (7, true, "custom 7"),
+        }
+    }
+
+    #[test]
+    fn restore_table_every_starting_fps_change_clear_return() {
+        for row in [StartingFps::Default30, StartingFps::Custom7] {
+            let (home, pinned, name) = fps_row(row);
+            let mut s = Sim::new(Pins {
+                quality: pinned,
+                ..Pins::default()
+            });
+            s.fps = home;
+            s.home_fps = home;
+            s.run(20, 40, 0.67);
+            s.run(40, 900, 0.30);
+            if pinned {
+                assert!(
+                    s.actions.is_empty(),
+                    "pinned {} changed: {:?}",
+                    name,
+                    s.actions
+                );
+                assert_eq!(s.fps, home);
+            } else {
+                assert_eq!(s.fps, 10, "{} did not change", name);
+                s.run(75, 40, 0.67);
+                assert_eq!(s.fps, home, "{} did not restore", name);
+            }
+        }
+    }
+
+    fn every_mode() -> [Mode; 3] {
+        [Mode::Normal, Mode::Sharp, Mode::Slow]
+    }
+
+    fn mode_name(m: Mode) -> &'static str {
+        match m {
+            Mode::Normal => "normal",
+            Mode::Sharp => "sharp",
+            Mode::Slow => "slow",
+        }
+    }
+
+    #[test]
+    fn restore_table_every_starting_mode_change_clear_return() {
+        for start in every_mode() {
+            let mut s = Sim::new(Pins::default());
+            match start {
+                Mode::Normal => {
+                    s.run(20, 40, 0.67);
+                    s.run(40, 900, 0.30);
+                    assert_eq!(
+                        s.h.mode(),
+                        Mode::Slow,
+                        "normal did not change: {:?}",
+                        s.actions
+                    );
+                }
+                Mode::Sharp => {
+                    s.h.mode = Mode::Sharp;
+                    s.quality = 1.5;
+                    s.fps = 10;
+                }
+                Mode::Slow => {
+                    s.h.mode = Mode::Slow;
+                    s.quality = 0.5;
+                    s.fps = 10;
+                }
+            }
+            let clear_ratio = if start == Mode::Sharp { 1.5 } else { 0.67 };
+            s.run(75, 40, clear_ratio);
+            assert_eq!(
+                s.actions.last().map(|a| a.1),
+                Some(Action::SetMode(Mode::Normal)),
+                "{} did not return: {:?}",
+                mode_name(start),
+                s.actions
+            );
+            assert_eq!(
+                s.h.mode(),
+                Mode::Normal,
+                "{} did not restore",
+                mode_name(start)
+            );
+        }
     }
 
     #[test]
@@ -647,7 +965,13 @@ mod tests {
         s.run(60, 40, 0.30);
         // first a fresh picture at the quality in force (the cheaper step), then sharp
         assert_eq!(s.actions[0].1, Action::Resharpen, "{:?}", s.actions);
-        assert!(s.actions.iter().any(|a| a.1 == Action::SetMode(Mode::Sharp)), "{:?}", s.actions);
+        assert!(
+            s.actions
+                .iter()
+                .any(|a| a.1 == Action::SetMode(Mode::Sharp)),
+            "{:?}",
+            s.actions
+        );
     }
 
     #[test]
@@ -656,7 +980,11 @@ mod tests {
         s.run(20, 40, 0.67);
         // the line is fine, the target stays at 0.52 (under 0.8 x 0.67), no full frame
         s.run(100, 40, 0.52);
-        let res: Vec<_> = s.actions.iter().filter(|a| a.1 == Action::Resharpen).collect();
+        let res: Vec<_> = s
+            .actions
+            .iter()
+            .filter(|a| a.1 == Action::Resharpen)
+            .collect();
         assert!(!res.is_empty(), "{:?}", s.actions);
         for w in res.windows(2) {
             assert!(w[1].0 - w[0].0 >= 60_000);
@@ -683,7 +1011,11 @@ mod tests {
         s.run(10, 40, 0.67);
         s.stall(4);
         s.run(3, 40, 0.67);
-        assert!(s.actions.iter().any(|a| a.1 == Action::SetMode(Mode::Slow)), "{:?}", s.actions);
+        assert!(
+            s.actions.iter().any(|a| a.1 == Action::SetMode(Mode::Slow)),
+            "{:?}",
+            s.actions
+        );
         assert!(!s.actions.iter().any(|a| matches!(a.1, Action::SetAv1(_))));
     }
 
@@ -699,7 +1031,10 @@ mod tests {
             assert!(w[1].0 - w[0].0 >= HOLD, "{:?}", s.actions);
         }
         for (i, a) in s.actions.iter().enumerate() {
-            let n = s.actions[i..].iter().filter(|b| b.0 - a.0 <= CAP_WINDOW).count();
+            let n = s.actions[i..]
+                .iter()
+                .filter(|b| b.0 - a.0 <= CAP_WINDOW)
+                .count();
             assert!(n <= CAP_ALL, "{} changes within 10 minutes from {}", n, a.0);
         }
     }
@@ -721,7 +1056,11 @@ mod tests {
 
     #[test]
     fn a_pinned_codec_is_never_changed_and_a_pinned_quality_neither() {
-        let mut s = Sim::new(Pins { codec: true, quality: true, off: false });
+        let mut s = Sim::new(Pins {
+            codec: true,
+            quality: true,
+            off: false,
+        });
         s.run(20, 40, 0.67);
         s.run(120, 900, 0.30);
         s.run(120, 40, 0.30);
@@ -731,7 +1070,11 @@ mod tests {
 
     #[test]
     fn off_does_nothing() {
-        let mut s = Sim::new(Pins { codec: false, quality: false, off: true });
+        let mut s = Sim::new(Pins {
+            codec: false,
+            quality: false,
+            off: true,
+        });
         s.run(20, 40, 0.67);
         s.run(120, 900, 0.30);
         s.stall(6);
@@ -744,7 +1087,11 @@ mod tests {
         s.run(20, 40, 0.67);
         s.run(30, 320, 0.30);
         assert!(s.h.av1());
-        s.h.set_pins(Pins { codec: true, quality: false, off: false });
+        s.h.set_pins(Pins {
+            codec: true,
+            quality: false,
+            off: false,
+        });
         assert!(!s.h.av1());
     }
 
@@ -755,9 +1102,23 @@ mod tests {
         s.run(30, 320, 0.30);
         assert_eq!(s.actions[0].1, Action::SetAv1(true));
         s.run_with(40, 40, 0.30, 4, true); // few frames while the helper works, line fine
-        assert!(s.actions.iter().any(|a| a.1 == Action::SetAv1(false)), "{:?}", s.actions);
-        let n = s.actions.iter().filter(|a| a.1 == Action::SetAv1(true)).count();
+        assert!(
+            s.actions.iter().any(|a| a.1 == Action::SetAv1(false)),
+            "{:?}",
+            s.actions
+        );
+        let n = s
+            .actions
+            .iter()
+            .filter(|a| a.1 == Action::SetAv1(true))
+            .count();
         s.run(120, 40, 0.30);
-        assert_eq!(s.actions.iter().filter(|a| a.1 == Action::SetAv1(true)).count(), n);
+        assert_eq!(
+            s.actions
+                .iter()
+                .filter(|a| a.1 == Action::SetAv1(true))
+                .count(),
+            n
+        );
     }
 }

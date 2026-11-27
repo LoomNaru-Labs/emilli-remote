@@ -1,4 +1,5 @@
-//! Removing Emilli Remote from Windows (REMOTE-EASY-4): one question, two choices.
+//! Removing Emilli Remote from Windows: one question, two choices for a person; explicit switches
+//! remain non-interactive technician entry points.
 //!
 //! "Uninstall Emilli Remote" (Windows' installed apps, the Start menu) runs
 //! `EmilliRemote.exe --uninstall`, which asks one question:
@@ -10,7 +11,8 @@
 //!   every user and of the service
 //!   accounts, the folder the program unpacks into, `C:\ProgramData\EmilliRemote`, the system
 //!   setting the install made, and the PC leaves its account (signed with its own key; when the
-//!   account server cannot be reached, one sentence says how to remove it from the list). A later
+//!   account server cannot be reached, local deletion stops until the person chooses the named
+//!   local-only action). A later
 //!   install starts as a new PC: a new number (no longer made from the network card), signed out,
 //!   default settings.
 //!
@@ -24,8 +26,10 @@ use hbb_common::log;
 use std::path::{Path, PathBuf};
 
 mod choice;
-use choice::{decide, from_yes_no, ID_EVERYTHING, ID_KEEP, IDCANCEL, WARNING_DEFAULT};
 pub use choice::Choice;
+use choice::{decide, from_yes_no, IDCANCEL, ID_EVERYTHING, ID_KEEP, WARNING_DEFAULT};
+mod policy;
+use policy::{allow_local_removal, AccountAnswer, UnreachableDecision};
 
 const KEEP_FLAG: &str = "--keep-settings";
 const EVERYTHING_FLAG: &str = "--remove-everything";
@@ -59,8 +63,16 @@ pub fn uninstall(args: &[String]) {
     };
     let elevated = crate::platform::is_elevated(None).unwrap_or(false);
     if !elevated {
-        let flag = if choice == Choice::Everything { EVERYTHING_FLAG } else { KEEP_FLAG };
-        let args = if asked { format!("--uninstall {} {}", flag, ASKED_FLAG) } else { format!("--uninstall {}", flag) };
+        let flag = if choice == Choice::Everything {
+            EVERYTHING_FLAG
+        } else {
+            KEEP_FLAG
+        };
+        let args = if asked {
+            format!("--uninstall {} {}", flag, ASKED_FLAG)
+        } else {
+            format!("--uninstall {}", flag)
+        };
         match std::env::current_exe() {
             Ok(exe) => {
                 if !crate::platform::run_uac(&exe.to_string_lossy(), &args).unwrap_or(false) {
@@ -78,18 +90,41 @@ fn remove(choice: Choice, show: bool) {
     log::info!("removal: {:?}", choice);
     if choice == Choice::Everything {
         let id = crate::ipc::get_id();
-        match forget_this_pc(&id) {
-            Some(true) => log::info!("this PC left its account"),
-            Some(false) => log::info!("this PC was in no account"),
-            None => {
-                let sentence = t("emilli_remove_unreachable").replace("{}", &spaced(&id));
-                log::warn!("removal: the account server was not reached");
-                if show {
-                    message(&sentence);
-                } else {
-                    println!("{}", sentence);
-                }
+        let answer = match forget_this_pc(&id) {
+            Some(true) => {
+                log::info!("this PC left its account");
+                AccountAnswer::LeftAccount
             }
+            Some(false) => {
+                log::info!("this PC was in no account");
+                AccountAnswer::WasNotInAccount
+            }
+            None => {
+                log::warn!("removal: the account server was not reached");
+                AccountAnswer::Unreachable
+            }
+        };
+        let decision = if answer == AccountAnswer::Unreachable {
+            if show {
+                ask_unreachable(&id)
+            } else {
+                // The technician switch stays non-interactive. It also stays safe: no account
+                // answer means no local identity deletion and no uninstall fall-through.
+                println!(
+                    "{}",
+                    t("emilli_remove_unreachable_technician").replace("{}", &spaced(&id))
+                );
+                None
+            }
+        } else {
+            None
+        };
+        if !allow_local_removal(answer, decision) {
+            log::info!("removal stopped before local deletion");
+            return;
+        }
+        if answer == AccountAnswer::Unreachable {
+            message(&t("emilli_remove_local_only_done").replace("{}", &spaced(&id)));
         }
     }
     let extra = extra_commands(choice);
@@ -119,10 +154,12 @@ fn forget_this_pc(id: &str) -> Option<bool> {
     let opts = crate::ipc::get_options();
     let api = crate::get_api_server(
         opts.get("api-server").cloned().unwrap_or_default(),
-        opts.get("custom-rendezvous-server").cloned().unwrap_or_default(),
+        opts.get("custom-rendezvous-server")
+            .cloned()
+            .unwrap_or_default(),
     );
     if api.is_empty() {
-        return Some(false);
+        return None;
     }
     crate::emilli::forget_this_pc(api, id.to_owned())
 }
@@ -177,10 +214,16 @@ pub fn extra_commands(choice: Choice) -> String {
         s += &rd(&dir);
     }
     // The update helper's start-up task, there only while it tries a new version (REMOTE-EASY-5).
-    s += &format!("schtasks /Delete /TN {} /F\n", crate::emilli_update::RESUME_TASK);
+    s += &format!(
+        "schtasks /Delete /TN {} /F\n",
+        crate::emilli_update::RESUME_TASK
+    );
     let (_, _, _, exe) = crate::platform::windows::get_install_info();
     if !exe.is_empty() {
-        s += &format!("netsh advfirewall firewall delete rule name=all program={}\n", quote(Path::new(&exe)));
+        s += &format!(
+            "netsh advfirewall firewall delete rule name=all program={}\n",
+            quote(Path::new(&exe))
+        );
     }
     if choice == Choice::Keep {
         return s;
@@ -191,7 +234,8 @@ pub fn extra_commands(choice: Choice) -> String {
             s += &rd(&profile.join(sub).join(&app));
         }
     }
-    let program_data = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_owned());
+    let program_data =
+        std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_owned());
     s += &rd(&Path::new(&program_data).join(&app));
     // The install allows services to send Ctrl+Alt+Del (for the remote side); nothing else of ours
     // needs it once the program is gone.
@@ -208,7 +252,12 @@ fn message(text: &str) {
     let title = wide(&t("emilli_remove_title"));
     let body = wide(text);
     unsafe {
-        MessageBoxW(std::ptr::null_mut(), body.as_ptr(), title.as_ptr(), MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+        MessageBoxW(
+            std::ptr::null_mut(),
+            body.as_ptr(),
+            title.as_ptr(),
+            MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND,
+        );
     }
 }
 
@@ -248,12 +297,14 @@ struct TaskDialogConfig {
     cx_width: u32,
 }
 
-type TaskDialogIndirect = unsafe extern "system" fn(*const TaskDialogConfig, *mut i32, *mut i32, *mut i32) -> i32;
+type TaskDialogIndirect =
+    unsafe extern "system" fn(*const TaskDialogConfig, *mut i32, *mut i32, *mut i32) -> i32;
 
 #[link(name = "kernel32")]
 extern "system" {
     fn LoadLibraryW(name: *const u16) -> *mut std::ffi::c_void;
     fn GetProcAddress(module: *mut std::ffi::c_void, name: *const u8) -> *mut std::ffi::c_void;
+    fn GetCurrentThreadId() -> u32;
 }
 
 /// The question; None when the person cancels. "Remove everything" is asked once more (the warning).
@@ -261,14 +312,45 @@ pub fn ask() -> Option<Choice> {
     let title = wide(&t("emilli_remove_title"));
     let f = task_dialog_fn();
     let first = f.and_then(|f| {
-        show(f, &title, false, "emilli_remove_question", "emilli_remove_content", ("emilli_remove_keep", "emilli_remove_everything"), ID_KEEP)
+        show(
+            f,
+            &title,
+            false,
+            "emilli_remove_question",
+            "emilli_remove_content",
+            &[
+                (ID_KEEP, "emilli_remove_keep"),
+                (ID_EVERYTHING, "emilli_remove_everything"),
+                (IDCANCEL, "Cancel"),
+            ],
+            ID_KEEP,
+        )
     });
     let first = match first {
         Some(first) => first,
         None => {
-            // Without the task dialog: the same two windows with Windows' Yes / No / Cancel.
-            let first = from_yes_no(message_box(&title, "emilli_remove_fallback", false));
-            return decide(first, || from_yes_no(message_box(&title, "emilli_remove_warning_fallback", true)));
+            let first = from_yes_no(message_box(
+                &title,
+                "emilli_remove_fallback",
+                false,
+                (
+                    "emilli_remove_keep_short",
+                    "emilli_remove_everything_short",
+                    "Cancel",
+                ),
+            ));
+            return decide(first, || {
+                from_yes_no(message_box(
+                    &title,
+                    "emilli_remove_warning_fallback",
+                    true,
+                    (
+                        "emilli_remove_keep_short",
+                        "emilli_remove_everything_short",
+                        "Cancel",
+                    ),
+                ))
+            });
         }
     };
     decide(first, || {
@@ -279,20 +361,155 @@ pub fn ask() -> Option<Choice> {
                 true,
                 "emilli_remove_warning_question",
                 "emilli_remove_warning",
-                ("emilli_remove_warning_keep", "emilli_remove_warning_everything"),
+                &[
+                    (ID_KEEP, "emilli_remove_warning_keep"),
+                    (ID_EVERYTHING, "emilli_remove_warning_everything"),
+                    (IDCANCEL, "Cancel"),
+                ],
                 WARNING_DEFAULT,
             )
         })
-        .unwrap_or_else(|| from_yes_no(message_box(&title, "emilli_remove_warning_fallback", true)))
+        .unwrap_or_else(|| {
+            from_yes_no(message_box(
+                &title,
+                "emilli_remove_warning_fallback",
+                true,
+                (
+                    "emilli_remove_keep_short",
+                    "emilli_remove_everything_short",
+                    "Cancel",
+                ),
+            ))
+        })
     })
 }
 
-/// Windows' Yes / No / Cancel with these words; Yes is the default. The warning has its icon.
-fn message_box(title: &[u16], key: &str, warning: bool) -> i32 {
-    use winapi::um::winuser::{MessageBoxW, MB_DEFBUTTON1, MB_ICONQUESTION, MB_ICONWARNING, MB_SETFOREGROUND, MB_YESNOCANCEL};
+/// The compatibility box keeps Windows' stable button IDs, but names all three buttons with the
+/// same localized actions as the task dialog. The warning has its icon.
+fn message_box(title: &[u16], key: &str, warning: bool, labels: (&str, &str, &str)) -> i32 {
+    use winapi::um::winuser::{
+        MessageBoxW, MB_DEFBUTTON1, MB_ICONQUESTION, MB_ICONWARNING, MB_SETFOREGROUND,
+        MB_YESNOCANCEL,
+    };
     let body = wide(&t(key));
-    let icon = if warning { MB_ICONWARNING } else { MB_ICONQUESTION };
-    unsafe { MessageBoxW(std::ptr::null_mut(), body.as_ptr(), title.as_ptr(), MB_YESNOCANCEL | icon | MB_DEFBUTTON1 | MB_SETFOREGROUND) }
+    let icon = if warning {
+        MB_ICONWARNING
+    } else {
+        MB_ICONQUESTION
+    };
+    named_message_box(
+        || unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                body.as_ptr(),
+                title.as_ptr(),
+                MB_YESNOCANCEL | icon | MB_DEFBUTTON1 | MB_SETFOREGROUND,
+            )
+        },
+        [
+            (choice::IDYES, t(labels.0)),
+            (choice::IDNO, t(labels.1)),
+            (IDCANCEL, t(labels.2)),
+        ],
+    )
+}
+
+thread_local! {
+    static MESSAGE_BOX_LABELS: std::cell::RefCell<Vec<(i32, Vec<u16>)>> = std::cell::RefCell::new(Vec::new());
+}
+
+type Hook = *mut std::ffi::c_void;
+
+#[link(name = "user32")]
+extern "system" {
+    fn SetWindowsHookExW(
+        id: i32,
+        callback: Option<unsafe extern "system" fn(i32, usize, isize) -> isize>,
+        module: isize,
+        thread: u32,
+    ) -> Hook;
+    fn UnhookWindowsHookEx(hook: Hook) -> i32;
+    fn CallNextHookEx(hook: Hook, code: i32, wparam: usize, lparam: isize) -> isize;
+    fn GetDlgItem(window: isize, id: i32) -> isize;
+    fn SetWindowTextW(window: isize, text: *const u16) -> i32;
+}
+
+unsafe extern "system" fn label_message_box(code: i32, wparam: usize, lparam: isize) -> isize {
+    const HCBT_ACTIVATE: i32 = 5;
+    if code == HCBT_ACTIVATE {
+        MESSAGE_BOX_LABELS.with(|labels| {
+            for (id, text) in labels.borrow().iter() {
+                let button = GetDlgItem(wparam as isize, *id);
+                if button != 0 {
+                    SetWindowTextW(button, text.as_ptr());
+                }
+            }
+        });
+    }
+    CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam)
+}
+
+fn named_message_box<const N: usize>(
+    show: impl FnOnce() -> i32,
+    labels: [(i32, String); N],
+) -> i32 {
+    MESSAGE_BOX_LABELS.with(|slot| {
+        *slot.borrow_mut() = labels
+            .into_iter()
+            .map(|(id, text)| (id, wide(&text)))
+            .collect();
+    });
+    let hook = unsafe { SetWindowsHookExW(5, Some(label_message_box), 0, GetCurrentThreadId()) };
+    let answer = show();
+    if !hook.is_null() {
+        unsafe { UnhookWindowsHookEx(hook) };
+    }
+    MESSAGE_BOX_LABELS.with(|slot| slot.borrow_mut().clear());
+    answer
+}
+
+fn ask_unreachable(_id: &str) -> Option<UnreachableDecision> {
+    let title = wide(&t("emilli_remove_title"));
+    if let Some(f) = task_dialog_fn() {
+        if let Some(answer) = show(
+            f,
+            &title,
+            true,
+            "emilli_remove_unreachable_question",
+            "emilli_remove_unreachable_content",
+            &[
+                (ID_EVERYTHING, "emilli_remove_local_only"),
+                (IDCANCEL, "Cancel"),
+            ],
+            IDCANCEL,
+        ) {
+            return if answer == ID_EVERYTHING {
+                Some(UnreachableDecision::RemoveLocalOnly)
+            } else {
+                Some(UnreachableDecision::Cancel)
+            };
+        }
+    }
+    use winapi::um::winuser::{
+        MessageBoxW, MB_DEFBUTTON2, MB_ICONWARNING, MB_OKCANCEL, MB_SETFOREGROUND,
+    };
+    let body = wide(&t("emilli_remove_unreachable_content"));
+    let answer = named_message_box(
+        || unsafe {
+            MessageBoxW(
+                std::ptr::null_mut(),
+                body.as_ptr(),
+                title.as_ptr(),
+                MB_OKCANCEL | MB_ICONWARNING | MB_DEFBUTTON2 | MB_SETFOREGROUND,
+            )
+        },
+        [(1, t("emilli_remove_local_only")), (IDCANCEL, t("Cancel"))],
+    );
+    if answer == 1 {
+        Some(UnreachableDecision::RemoveLocalOnly)
+    } else {
+        Some(UnreachableDecision::Cancel)
+    }
 }
 
 fn task_dialog_fn() -> Option<TaskDialogIndirect> {
@@ -305,13 +522,16 @@ fn task_dialog_fn() -> Option<TaskDialogIndirect> {
             if p.is_null() {
                 None
             } else {
-                Some(std::mem::transmute::<*mut std::ffi::c_void, TaskDialogIndirect>(p))
+                Some(std::mem::transmute::<
+                    *mut std::ffi::c_void,
+                    TaskDialogIndirect,
+                >(p))
             }
         }
     }
 }
 
-/// One task dialog: two command links (keys of their words) and Cancel. The pressed button's id
+/// One task dialog with localized, explicitly named buttons. The pressed button's id
 /// (IDCANCEL when cancelled or closed), or None when the dialog could not be shown.
 fn show(
     f: TaskDialogIndirect,
@@ -319,30 +539,36 @@ fn show(
     warning: bool,
     instruction: &str,
     content: &str,
-    links: (&str, &str),
+    links: &[(i32, &str)],
     default: i32,
 ) -> Option<i32> {
     const TDF_ALLOW_DIALOG_CANCELLATION: i32 = 0x0008;
     const TDF_USE_COMMAND_LINKS: i32 = 0x0010;
-    const TDCBF_CANCEL_BUTTON: i32 = 0x0008;
     // TD_WARNING_ICON, MAKEINTRESOURCEW(-1).
     const TD_WARNING_ICON: usize = 0xFFFF;
     let instruction = wide(&t(instruction));
     let content = wide(&t(content));
-    let keep = wide(&t(links.0));
-    let everything = wide(&t(links.1));
-    let buttons = [
-        TaskDialogButton { id: ID_KEEP, text: keep.as_ptr() },
-        TaskDialogButton { id: ID_EVERYTHING, text: everything.as_ptr() },
-    ];
+    let words: Vec<Vec<u16>> = links.iter().map(|(_, key)| wide(&t(key))).collect();
+    let buttons: Vec<TaskDialogButton> = links
+        .iter()
+        .zip(words.iter())
+        .map(|((id, _), text)| TaskDialogButton {
+            id: *id,
+            text: text.as_ptr(),
+        })
+        .collect();
     let config = TaskDialogConfig {
         cb_size: std::mem::size_of::<TaskDialogConfig>() as u32,
         hwnd_parent: 0,
         h_instance: 0,
         flags: TDF_ALLOW_DIALOG_CANCELLATION | TDF_USE_COMMAND_LINKS,
-        common_buttons: TDCBF_CANCEL_BUTTON,
+        common_buttons: 0,
         window_title: title.as_ptr(),
-        main_icon: if warning { TD_WARNING_ICON as *const u16 } else { std::ptr::null() },
+        main_icon: if warning {
+            TD_WARNING_ICON as *const u16
+        } else {
+            std::ptr::null()
+        },
         main_instruction: instruction.as_ptr(),
         content: content.as_ptr(),
         c_buttons: buttons.len() as u32,
@@ -362,11 +588,21 @@ fn show(
         cx_width: 0,
     };
     let mut pressed = IDCANCEL;
-    let hr = unsafe { f(&config, &mut pressed, std::ptr::null_mut(), std::ptr::null_mut()) };
+    let hr = unsafe {
+        f(
+            &config,
+            &mut pressed,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+        )
+    };
     if hr >= 0 {
         return Some(pressed);
     }
-    log::warn!("the removal window could not be shown as a task dialog ({:#x})", hr);
+    log::warn!(
+        "the removal window could not be shown as a task dialog ({:#x})",
+        hr
+    );
     None
 }
 

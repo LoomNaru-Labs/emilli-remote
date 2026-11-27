@@ -35,7 +35,8 @@ String _fill(String key, List<String> values) {
 String _notes(Map<String, dynamic> s) {
   final ko = (s['notes_ko'] ?? '').toString();
   final en = (s['notes_en'] ?? '').toString();
-  final korean = bind.mainGetLocalOption(key: 'lang') == 'ko' ||
+  final korean =
+      bind.mainGetLocalOption(key: 'lang') == 'ko' ||
       (bind.mainGetLocalOption(key: 'lang').isEmpty &&
           Get.deviceLocale?.languageCode == 'ko');
   if (korean && ko.isNotEmpty) return ko;
@@ -65,16 +66,19 @@ String emilliUpdateErrorText(String code) {
 }
 
 /// The sentence for the last update's result, or null when there is none to show.
-String? emilliUpdateResultText(dynamic r) {
+String? emilliUpdateResultText(dynamic r, [String running = '']) {
   if (r is! Map) return null;
   final from = (r['from'] ?? '').toString();
   final to = (r['to'] ?? '').toString();
   switch (r['result']) {
     case 'updated':
+      if (running.isNotEmpty && to != running) return null;
       return _fill('emilli_update_done', [to]);
     case 'rolled_back':
+      if (running.isNotEmpty && from != running) return null;
       return _fill('emilli_update_rolled_back', [to, from]);
     case 'failed':
+      if (running.isNotEmpty && from != running && to != running) return null;
       return translate('emilli_update_failed');
   }
   return null;
@@ -97,7 +101,9 @@ String emilliUpdateStatusText(Map<String, dynamic> s) {
   }
   switch (s['status']) {
     case 'available':
-      return _fill('emilli_update_available', [(s['version'] ?? '').toString()]);
+      return _fill('emilli_update_available', [
+        (s['version'] ?? '').toString(),
+      ]);
     case 'up-to-date':
       return translate('emilli_update_up_to_date');
     case 'error':
@@ -112,7 +118,7 @@ Future<void> emilliShowUpdateResult() async {
   final s = await emilliUpdate('state');
   final r = s['result'];
   if (r is! Map || r['shown'] == 1) return;
-  final text = emilliUpdateResultText(r);
+  final text = emilliUpdateResultText(r, (s['current'] ?? '').toString());
   if (text == null) return;
   await gFFI.dialogManager.show<bool>((setState, close, context) {
     return CustomAlertDialog(
@@ -159,62 +165,84 @@ class _EmilliUpdateSectionState extends State<EmilliUpdateSection> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final usable = _s['service'] != false &&
+    final usable =
+        _s['service'] != false &&
         _s['installed'] == true &&
         _s['configured'] == true;
     final busy = (_s['busy'] ?? '').toString().isNotEmpty;
     final available = _s['status'] == 'available' && !busy;
     final status = emilliUpdateStatusText(_s);
-    final result = emilliUpdateResultText(_s['result']);
+    final result = emilliUpdateResultText(
+      _s['result'],
+      (_s['current'] ?? '').toString(),
+    );
     return Column(
       key: const ValueKey('emilli-update'),
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         const SizedBox(height: 12),
-        Text(translate('emilli_update_title'),
-            style: theme.textTheme.titleMedium),
+        Text(
+          translate('emilli_update_title'),
+          style: theme.textTheme.titleMedium,
+        ),
         const SizedBox(height: 6),
         if (status.isNotEmpty)
-          Text(status, key: const ValueKey('emilli-update-status'))
-              .marginSymmetric(vertical: 4),
+          Text(
+            status,
+            key: const ValueKey('emilli-update-status'),
+          ).marginSymmetric(vertical: 4),
         if (available && _notes(_s).isNotEmpty)
-          Text(_notes(_s), style: theme.textTheme.bodySmall)
-              .marginSymmetric(vertical: 2),
+          Text(
+            _notes(_s),
+            style: theme.textTheme.bodySmall,
+          ).marginSymmetric(vertical: 2),
         if (usable)
-          Row(children: [
-            if (available)
-              ElevatedButton(
-                key: const ValueKey('emilli-update-install'),
-                onPressed: () => _ask('install'),
-                child: Text(translate('emilli_update_button')),
-              ).marginOnly(right: 12),
-            OutlinedButton(
-              key: const ValueKey('emilli-update-check'),
-              onPressed: busy ? null : () => _ask('check'),
-              child: Text(translate('emilli_update_check')),
-            ),
-          ]).marginSymmetric(vertical: 6),
+          Row(
+            children: [
+              if (available)
+                ElevatedButton(
+                  key: const ValueKey('emilli-update-install'),
+                  onPressed: () => _ask('install'),
+                  child: Text(translate('emilli_update_button')),
+                ).marginOnly(right: 12),
+              OutlinedButton(
+                key: const ValueKey('emilli-update-check'),
+                onPressed: busy ? null : () => _ask('check'),
+                child: Text(translate('emilli_update_check')),
+              ),
+            ],
+          ).marginSymmetric(vertical: 6),
         if (usable)
-          Row(children: [
-            Checkbox(
-              value: _s['auto'] == true,
-              onChanged: (v) async {
-                await bind.mainSetOption(
-                    key: kEmilliAutoUpdate, value: v == true ? 'Y' : 'N');
-                await _ask('state');
-              },
-            ),
-            Expanded(
-                child: Text(translate('emilli_update_auto'),
-                    key: const ValueKey('emilli-update-auto'))),
-          ]),
+          Row(
+            children: [
+              Checkbox(
+                value: _s['auto'] == true,
+                onChanged: (v) async {
+                  await bind.mainSetOption(
+                    key: kEmilliAutoUpdate,
+                    value: v == true ? 'Y' : 'N',
+                  );
+                  await _ask('state');
+                },
+              ),
+              Expanded(
+                child: Text(
+                  translate('emilli_update_auto'),
+                  key: const ValueKey('emilli-update-auto'),
+                ),
+              ),
+            ],
+          ),
         if (usable)
-          Text(translate('emilli_update_auto_tip'),
-                  style: theme.textTheme.bodySmall)
-              .marginOnly(left: 12, bottom: 4),
+          Text(
+            translate('emilli_update_auto_tip'),
+            style: theme.textTheme.bodySmall,
+          ).marginOnly(left: 12, bottom: 4),
         if (result != null)
-          Text(result, style: theme.textTheme.bodySmall)
-              .marginSymmetric(vertical: 4),
+          Text(
+            result,
+            style: theme.textTheme.bodySmall,
+          ).marginSymmetric(vertical: 4),
       ],
     );
   }

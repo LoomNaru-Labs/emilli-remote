@@ -17,8 +17,11 @@ mod es;
 mod et;
 mod eu;
 mod fa;
-mod gu;
+mod fi;
 mod fr;
+mod ge;
+mod gl;
+mod gu;
 mod he;
 mod hi;
 mod hr;
@@ -30,6 +33,7 @@ mod ko;
 mod kz;
 mod lt;
 mod lv;
+mod ml;
 mod nb;
 mod nl;
 mod pl;
@@ -43,17 +47,13 @@ mod sl;
 mod sq;
 mod sr;
 mod sv;
+mod ta;
 mod th;
 mod tr;
 mod tw;
 mod uk;
 mod ur;
 mod vi;
-mod ta;
-mod ge;
-mod fi;
-mod ml;
-mod gl;
 
 pub const LANGS: &[(&str, &str)] = &[
     ("en", "English"),
@@ -156,7 +156,8 @@ fn resolve_lang(saved_lang: &str, locale: &str, cjk_fallback: bool) -> String {
         // pt-PT as its parent (Angola, Mozambique, Cape Verde, etc.),
         // so it should resolve to European Portuguese.
         if locale.starts_with("pt") {
-            lang = (if locale == "pt" || locale.starts_with("pt-br") || locale.starts_with("pt_br") {
+            lang = (if locale == "pt" || locale.starts_with("pt-br") || locale.starts_with("pt_br")
+            {
                 "pt-br"
             } else {
                 "pt-pt"
@@ -346,6 +347,15 @@ mod test {
         assert_eq!(f("zh-cn", "en-US", false), "zh-cn");
         assert_eq!(f("", "zh_TW", false), "zh-tw");
         assert_eq!(f("", "ja-JP", false), "ja");
+    }
+
+    #[test]
+    fn test_fresh_korean_windows_starts_in_korean() {
+        use super::resolve_lang as f;
+
+        assert_eq!(f("", "ko_KR", false), "ko");
+        assert_eq!(f("", "ko-KR", false), "ko");
+        assert_eq!(f("en", "ko_KR", false), "en", "a saved choice still wins");
     }
 
     #[test]
