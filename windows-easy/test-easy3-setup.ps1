@@ -24,6 +24,12 @@ function Check([string] $name, [bool] $ok, [string] $detail = '') {
     if ($ok) { $script:passes++ } else { $script:fails++ }
     Write-Host ("{0} {1}{2}" -f $(if ($ok) { 'PASS' } else { 'FAIL' }), $name, $(if ($detail) { " ($detail)" } else { '' }))
 }
+$setupSource = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'EmilliRemoteSetup.iss') -Raw
+Check 'Setup itself has no removal entry' ($setupSource -match '(?m)^Uninstallable=no\s*$') 'Uninstallable=no'
+$oldRemoval = [regex]::Match($setupSource, "Exec\(OldExe,\s*'([^']*)'").Groups[1].Value
+Check 'Setup removal of an earlier program opens the person warning' ($oldRemoval -eq '--uninstall') $oldRemoval
+Check 'no store-reachable Setup path passes the technician switch' ($oldRemoval -notmatch 'remove-everything') $oldRemoval
+Check 'an app-open failure keeps the installed last page' ($setupSource -match "AppLaunchError := SysErrorMessage" -and $setupSource -match "Result := False" -and $setupSource -match 'Open the Start menu and choose "Emilli Remote"' -and $setupSource -match 'Technician reason') 'installed, Start menu, and technician reason'
 $Bad = '(?i)rust\s*desk'
 $NewExe = 'C:\Program Files\EmilliRemote\EmilliRemote.exe'
 $OldExe = 'C:\Program Files\RustDesk\rustdesk.exe'

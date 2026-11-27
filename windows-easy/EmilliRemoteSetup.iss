@@ -127,6 +127,7 @@ const
 var
   PcId: String;
   InstallError: String;
+  AppLaunchError: String;
   AppStarted: Boolean;
 
 function WaitNamedPipe(Name: String; TimeOut: Cardinal): Integer;
@@ -433,15 +434,21 @@ begin
     { Inno may ask more than once: the app is started once. }
     if AppStarted then
     begin
-      Result := True;
+      Result := AppLaunchError = '';
       Exit;
     end;
     AppStarted := True;
     if ExecAsOriginalUser(InstalledExe, '', '', SW_SHOWNORMAL, ewNoWait, ResultCode) then
-      Log('Emilli: the app started, the last page skipped')
+    begin
+      Log('Emilli: the app started, the last page skipped');
+      Result := True;
+    end
     else
-      Log('Emilli: the app did not start: ' + SysErrorMessage(ResultCode));
-    Result := True;
+    begin
+      AppLaunchError := SysErrorMessage(ResultCode) + ' (code ' + IntToStr(ResultCode) + ')';
+      Log('Emilli: the app did not start: ' + AppLaunchError);
+      Result := False;
+    end;
   end;
 end;
 
@@ -470,7 +477,18 @@ begin
   end
   else if CurPageID = wpFinished then
   begin
-    if InstallError = '' then
+    if (InstallError = '') and (AppLaunchError <> '') then
+    begin
+      WizardForm.FinishedHeadingLabel.Caption :=
+        'Emilli Remote가 설치됐습니다' + #13#10 + 'Emilli Remote is installed';
+      WizardForm.FinishedLabel.Caption :=
+        '설치는 끝났지만 프로그램을 지금 열지 못했습니다.' + #13#10 +
+        '시작 메뉴에서 "Emilli Remote"를 선택해 여세요.' + #13#10 + #13#10 +
+        'Installation finished, but Setup could not open the program.' + #13#10 +
+        'Open the Start menu and choose "Emilli Remote".' + #13#10 + #13#10 +
+        '기술 정보 / Technician reason: ' + AppLaunchError;
+    end
+    else if InstallError = '' then
     begin
       WizardForm.FinishedHeadingLabel.Caption := '설치가 끝났습니다' + #13#10 + 'Setup is done';
       WizardForm.FinishedLabel.Caption :=
